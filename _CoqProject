@@ -1,0 +1,5 @@
+-R theories/ WtProc
+-arg -w
+-arg all
+
+theories/Proc.v

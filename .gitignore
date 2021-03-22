@@ -1,0 +1,7 @@
+attic
+*~
+*.glob
+*.vo
+*.vos
+*.vok
+*.aux
