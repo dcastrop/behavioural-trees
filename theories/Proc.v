@@ -23,22 +23,13 @@ Module ITree.
     Unset Primitive Projections.
   End Syntax.
 
-  Arguments Vis [E R itree A] e k.
-  Arguments Tau [E R itree] i.
-  Arguments Ret [E R itree] r.
+  Arguments Vis {E R itree A} e k.
+  Arguments Tau {E R itree} i.
+  Arguments Ret {E R itree} r.
 
   Section Peek.
     Context (E : Type -> Type).
     Context (R : Type).
-
-    Inductive etree : Type :=
-    | eVis {A} (e : E A) (k : A -> etree)
-    | eRec (i : itree E R)
-    | eRet (r : R)
-  .
-  Arguments eVis [_] e k.
-  Arguments eRec i : clear implicits.
-  Arguments eRet r : clear implicits.
 
   Definition run (i : itree E R) : itreeF E R (itree E R) :=
     match observe i with
@@ -60,61 +51,6 @@ Module ITree.
     Definition p_lty := lty -> Prop.
     Definition p_lty' := lty' -> Prop.
 
-    Definition _can_send (r : P) : p_lty' :=
-      fun l => match l with
-               | Vis _ (LSend s) _ => s = r
-               | _ => False
-               end.
-
-    Definition _can_recv (r : P) : p_lty' :=
-      fun l => match l with
-               | Vis _ (LRecv s) _ => s = r
-               | _ => False
-               end.
-
-    Definition _type_ev A : p_lty' :=
-      fun l => match l with
-               | Vis B _ _ => B = A
-               | _ => False
-               end.
-
-    Definition can_send (r : P) : p_lty :=
-      fun l => _can_send r (run l).
-
-    Definition can_recv (r : P) : p_lty :=
-      fun l => _can_recv r (run l).
-
-    Definition type_ev A : p_lty :=
-      fun l => _type_ev A (run l).
-
-    Definition run_send A (r : P) (x : A) (l : lty)
-      : can_send r l -> type_ev A l -> lty :=
-      match run l as rl
-            return _can_send r rl -> _type_ev A rl -> lty
-      with
-      | Vis T (LSend p) k =>
-        fun _ EQ => match EQ in _ = T
-                          return T -> lty
-                    with
-                    | eq_refl => k
-                    end x
-      | _ => fun F => match F with end
-      end.
-
-    Definition run_recv A (r : P) (l : lty)
-      : can_recv r l -> type_ev A l -> A -> lty :=
-      match run l as rl
-            return _can_recv r rl -> _type_ev A rl -> A -> lty
-      with
-      | Vis T (LRecv p) k =>
-        fun _ EQ => match EQ in _ = T
-                          return T -> lty
-                    with
-                    | eq_refl => k
-                    end
-      | _ => fun F => match F with end
-      end.
-
   End LocalTypes.
 
   Declare Scope lty_scope.
@@ -130,18 +66,18 @@ Module ITree.
 
   Section WellTypedProcesses.
 
-    Definition ev_ty : Type := forall A, lty -> (A -> lty) -> Type.
+    Variable E : Type -> Type.
 
-    Inductive ev : ev_ty :=
-    | E_send {A} (x : A) p l (H1 : can_send p l) (H2 : type_ev A l)
-      : @ev unit l (fun y =>run_send x H1 H2)
-    | E_recv {A} p l (H1 : can_recv p l) (H2 : type_ev A l)
-      : @ev A l (run_recv H1 H2).
-    Arguments E_send [A] x p & [l] H1 H2.
-    Arguments E_recv [A] p & [l] H1 H2.
+    Inductive ev l : forall A, (A -> lty) -> Type :=
+    | E_send {A} x p k (H : Vis (LSend A p) k = run l) : @ev l unit (fun _ => k x)
+    | E_recv {A} p k (H : Vis (LRecv A p) k = run l) : @ev l A k
+    | E_run {A} (e : E A) : @ev l A (fun _ =>l).
+    Arguments E_send & [l A] x p [k] H.
+    Arguments E_recv & [l A] p [k] H.
+    Arguments E_run & [l A] e.
 
     Inductive procF (proc : lty -> Type) : lty -> Type :=
-    | P_ev {A k l} (e : @ev A l k) (kp : forall x, proc (k x)) : procF proc l
+    | P_ev {A k l} (e : @ev l A k) (kp : forall x, proc (k x)) : procF proc l
     | P_end {A : Set} (x : A) l (_ : Ret A = run l) : procF proc l.
     Arguments P_ev [proc A k] & [l] e kp.
     Arguments P_end [proc A] x & [l] _.
@@ -151,16 +87,16 @@ Module ITree.
     Arguments Go & [l].
 
     Definition p_send {A} (x : A) (p : P)
-               l (H1 : can_send p l) (H2 : type_ev A l)
-               (k : unit -> proc (run_send x H1 H2))
-      : proc l := Go (P_ev (E_send x p H1 H2) k).
-    Arguments p_send [A] x p & [l] H1 H2 k.
+               l kl (H : Vis (LSend A p) kl = run l)
+               (k : unit -> proc (kl x))
+      : proc l := Go (P_ev (E_send x p H) k).
+    Arguments p_send [A] x p & [l kl] H.
 
     Definition p_recv {A} (p : P)
-               l (H1 : can_recv p l) (H2 : type_ev A l)
-               (k : forall x, proc (run_recv H1 H2 x))
-      : proc l := Go (P_ev (E_recv p H1 H2) k).
-    Arguments p_recv [A] p & [l] H1 H2 k.
+               l kl (H : Vis (LRecv A p) kl = run l)
+               (k : forall x, proc (kl x))
+      : proc l := Go (P_ev (E_recv p H) k).
+    Arguments p_recv [A] p & [l kl] H k.
 
     Definition pure [A : Set] (x : A) l (H : Ret A = run l) : proc l :=
       Go (P_end x H).
@@ -174,120 +110,193 @@ Module ITree.
          | false => p2
          end.
     Arguments ifB & [l1 l2] b p1 p2.
-    Notation "'if' b 'then' p1 'else' p2" := (ifB b p1 p2) : expr_scope.
   End WellTypedProcesses.
 
-  Arguments E_send [A] x p & [l] H1 H2.
-  Arguments E_recv [A] p & [l] H1 H2.
-  Arguments P_ev [proc A k] & [l] e kp.
-  Arguments P_end [proc A] x & [l] _.
-  Arguments Go & [l].
-  Arguments p_send [A] x p & [l] H1 H2 k.
-  Arguments p_recv [A] p & [l] H1 H2 k.
-  Arguments pure [A] x & [l] _.
-  Arguments ifB & [l1 l2] b p1 p2.
+  Arguments E_send & [E l A] x p [k] H.
+  Arguments E_recv & [E l A] p [k] H.
+  Arguments E_run & [E l A] e.
+  Arguments P_ev [E proc A k] & [l] e kp.
+  Arguments P_end [E proc A] x & [l] _.
+  Arguments Go & [E l].
+  Arguments p_send [E A] x p & [l kl] H k.
+  Arguments p_recv [E A] p & [l kl] H k.
+  Arguments pure [E A] x & [l] _.
+  Arguments ifB [E] & [l1 l2] b p1 p2.
 
   Declare Scope expr_scope.
   Bind Scope expr_scope with proc.
   Delimit Scope expr_scope with expr.
   Notation "'RET' x" := (pure x Logic.eq_refl) (at level 60) : expr_scope.
   Notation "p '!' e ';;' K" :=
-    (p_send e p Logic.eq_refl Logic.eq_refl (fun _ =>K))
+    (p_send e p Logic.eq_refl (fun _ =>K))
       (right associativity, at level 60) : expr_scope.
   Notation "x '<-' p '?' ';;' K" :=
-    (p_recv p Logic.eq_refl Logic.eq_refl (fun x => K))
+    (p_recv p Logic.eq_refl (fun x => K))
       (right associativity, at level 60) : expr_scope.
   Notation "'if' b 'then' p1 'else' p2" := (ifB b p1 p2) : expr_scope.
-
-  Section Examples.
-    Definition p := 0.
-    CoFixpoint example : lty :=
-      n <- p !! nat ;;
-        match n with
-        | 0 => inact bool
-        | m.+1 => b <- p !! bool ;; example
-        end
-        % lty.
-
-    Open Scope expr_scope.
-    CoFixpoint prog1 : proc example
-      := p ! 1 ;; p ! true ;; prog1.
-    CoFixpoint prog2 : proc example
-      := p ! 1 ;; p ! true ;; p ! 2 ;; p ! false ;; prog2.
-    Definition prog3 : proc example
-      := p ! 1 ;;
-           (cofix cont :=
-              p ! true ;; p ! 2 ;; cont).
-    CoFixpoint prog4 (n : nat) : proc example :=
-      match n with
-      | 0 => p ! 0 ;; RET true
-      | m.+1 => p ! m.+1 ;; p ! false ;; prog4 m
-      end.
-    CoFixpoint prog5 (n : nat) : proc example :=
-      p ! n ;;
-        match n with
-        | 0 => RET true
-        | m.+1 => p ! false ;; prog5 m
-        end.
-
-    CoFixpoint example2 : lty :=
-      n <- p ?? nat ;;
-        match n with
-        | 0 => inact bool
-        | m.+1 => b <- p !! bool ;; example2
-        end % lty.
-    CoFixpoint prog21 : proc example2 :=
-      n <- p ? ;;
-        match n with
-        | 0 => RET true
-        | m.+1 => p ! false ;; prog21
-        end.
-    Close Scope expr_scope.
-
-    Open Scope lty_scope.
-    CoFixpoint example3 : lty :=
-      n <- p ?? nat ;;
-        if n > 27
-        then inact bool
-        else b <- p !! bool ;; example3.
-    Close Scope lty_scope.
-
-    Open Scope expr_scope.
-    CoFixpoint prog31 : proc example3
-      := n <- p ? ;;
-           if (n > 27)
-           then RET true
-           else p ! false ;; prog31.
-    CoFixpoint prog32 : proc example3
-      := n <- p ? ;;
-           if (n > 27)
-           then RET true
-           else p ! false ;;
-                  match (n > 28) with
-                  | true => prog31
-                  | false => prog32
-                  end.
-    Close Scope expr_scope.
-  End Examples.
 End ITree.
 
-Require Extraction.
-Require Import ExtrOcamlBigIntConv.
-Import ITree.
-Extraction Implicit E_send [A l H1 H2].
-Extraction Implicit E_recv [A l H1 H2].
-Extraction Implicit P_ev [A l k].
-Extraction Implicit P_end [A l].
-Extraction Implicit ifB [l1 l2].
-Extraction Inline ifB.
-Extraction Implicit p_send [l].
-Extraction Inline p_send.
-Extraction Implicit p_recv [l].
-Extraction Inline p_recv.
-Extraction Implicit p_recv [l].
-Extraction Inline pure.
-Extraction Implicit Go [l].
+Module EraseExtract.
+  Require Extraction.
+  Require Import ExtrOcamlBigIntConv.
+  Import ITree.
+  Extraction Implicit ev [l].
+  Extraction Implicit E_send [E A l k H].
+  Extraction Implicit E_recv [E A l k H].
+  Extraction Implicit P_ev [E A l k].
+  Extraction Implicit P_end [E A l].
+  Extraction Implicit ifB [E l1 l2].
+  Extraction Inline ifB.
+  Extraction Implicit p_send [E l kl].
+  Extraction Inline p_send.
+  Extraction Implicit p_recv [E l kl].
+  Extraction Inline p_recv.
+  Extraction Implicit p_recv [E l kl].
+  Extraction Inline pure.
+  Extraction Implicit Go [E l].
+End EraseExtract.
+
+Module Examples.
+  Import ITree.
+  Definition p := 0.
+  CoFixpoint example : lty :=
+    n <- p !! nat ;;
+      match n with
+      | 0 => inact bool
+      | m.+1 => b <- p !! bool ;; example
+      end
+      % lty.
+
+  Open Scope expr_scope.
+  Definition pure_proc := proc (fun _ => False).
+
+  Fail CoFixpoint prog1 : pure_proc example
+    := p ! 1 ;; p ! true ;; RET 1.
+
+  Fail CoFixpoint prog1 : pure_proc example
+    := p ! 1 ;; p ! true ;; p ! true ;; RET 1.
+
+  Fail CoFixpoint prog1 : pure_proc example
+    := p ! false ;; p ! 1 ;; p ! true ;; RET 1.
+
+  CoFixpoint prog1 : pure_proc example
+    := p ! 1 ;; p ! true ;; prog1.
+
+  Fail CoFixpoint prog2 : pure_proc example
+    := p ! 1 ;; p ! 1 ;; p ! true ;; p ! false ;; prog2.
+  CoFixpoint prog2 : pure_proc example
+    := p ! 1 ;; p ! true ;; p ! 2 ;; p ! false ;; prog2.
+  Definition prog3 : pure_proc example
+    := p ! 1 ;;
+         (cofix cont :=
+            p ! true ;; p ! 2 ;; cont).
+  CoFixpoint prog4 (n : nat) : pure_proc example :=
+    match n with
+    | 0 => p ! 0 ;; RET true
+    | m.+1 => p ! m.+1 ;; p ! false ;; prog4 m
+    end.
+  CoFixpoint prog5 (n : nat) : pure_proc example :=
+    p ! n ;;
+      match n with
+      | 0 => RET true
+      | m.+1 => p ! false ;; prog5 m
+      end.
+
+  CoFixpoint example2 : lty :=
+    n <- p ?? nat ;;
+      match n with
+      | 0 => inact bool
+      | m.+1 => b <- p !! bool ;; example2
+      end % lty.
+  CoFixpoint prog21 : pure_proc example2 :=
+    n <- p ? ;;
+      match n with
+      | 0 => RET true
+      | m.+1 => p ! false ;; prog21
+      end.
+  Close Scope expr_scope.
+
+  Open Scope lty_scope.
+  CoFixpoint example3 : lty :=
+    n <- p ?? nat ;;
+      if n > 27
+      then inact bool
+      else b <- p !! bool ;; example3.
+  Close Scope lty_scope.
+
+  Open Scope expr_scope.
+  CoFixpoint prog31 : pure_proc example3
+    := n <- p ? ;;
+         if (n > 27)
+         then RET true
+         else p ! false ;; prog31.
+  CoFixpoint prog32 : pure_proc example3
+    := n <- p ? ;;
+         if (n > 27)
+         then RET true
+         else p ! false ;;
+                match (n > 28) with
+                | true => prog31
+                | false => prog32
+                end.
+  Close Scope expr_scope.
+End Examples.
+
+Module IOProc.
+  Variant IO (A : Type) : Type :=
+  | Read : IO A
+  | Write (x : A) : IO A.
+
+  Import ITree.
+
+  Definition io_proc := proc IO.
+  Print E_send.
+
+  Notation "'write' e ';;' K" :=
+    (Go (P_ev (E_run (Write e)) (fun _ => K)))
+      (right associativity, at level 60) : expr_scope.
+  Notation "X '<-' 'read' T ';;' K" :=
+    (Go (P_ev (E_run (Read T)) (fun (X : T) => K)))
+      (right associativity, at level 60) : expr_scope.
+End IOProc.
+
+Module PingPong.
+  Import ITree.
+  Import IOProc.
+
+  CoFixpoint pp_client (p : P) : lty :=
+    n <- p !! option nat ;;
+      match n with
+      | None => inact unit
+      | Some n => _ <- p ?? nat ;; pp_client p
+      end
+      % lty.
+
+  CoFixpoint pp_server (p : P) : lty :=
+    n <- p ?? option nat ;;
+      match n with
+      | None => inact unit
+      | Some n => _ <- p !! nat ;; pp_server p
+      end
+      % lty.
+
+  Inductive PingTy := Ping (n : nat) | Close.
+  Inductive PongTy := Pong (n : nat).
+
+  Open Scope expr_scope.
+  CoFixpoint some_client (p : P) : io_proc (pp_client p) :=
+    n <- read PingTy ;;
+    match n with
+    | Ping n =>
+      p ! Some n ;;
+      x <- p ? ;;
+      write (Pong x);;
+      some_client p
+    | Close => p ! None ;; RET tt
+    end.
+
+End PingPong.
 
 Extract Constant leq => "(<=)".
 Extraction Inline leq.
-Recursive Extraction prog31.
+Recursive Extraction Examples.prog31.
