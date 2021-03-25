@@ -41,11 +41,7 @@ Module ITree.
     end.
 
   Definition fin_run (i : ftree E R) : itreeF E R (ftree E R) :=
-    match fobserve i with
-    | Vis _ e k => Vis e k
-    | Tau t => fobserve t
-    | Ret r => Ret r
-    end.
+    fobserve i.
 
   End Peek.
 
@@ -59,39 +55,55 @@ Module ITree.
         l_send : forall A, P -> (A -> T) -> T;
         l_recv : forall A, P -> (A -> T) -> T;
         l_end : Type -> T;
+        l_impossible : Type -> T;
       }.
 
-    Instance infLocalType : LocalType (itree LTy Type) :=
+    Global Instance infLocalType : LocalType (itree LTy Type) | 0 :=
       {
         run := @inf_run LTy Type;
+        l_impossible := fun _ => cofix spin := go (Tau spin);
         l_send := fun A p f =>
                     go (Vis (LSend A p) f);
         l_recv := fun A p f =>
                     go (Vis (LRecv A p) f);
-        l_end := fun (x : Type) => go (Ret x)
-
+        l_end := fun (x : Type) => go (Ret x);
       }.
-    Instance finLocalType : LocalType (ftree LTy Type) :=
+    Global Instance finLocalType : LocalType (ftree LTy Type) | 0 :=
       {
         run := @fin_run LTy Type;
+        l_impossible := fun (x : Type) => fgo (Tau (fgo (Ret x)));
         l_send := fun A p f =>
                     fgo (Vis (LSend A p) f);
         l_recv := fun A p f =>
                     fgo (Vis (LRecv A p) f);
-        l_end := fun (x : Type) => fgo (Ret x)
+        l_end := fun (x : Type) => fgo (Ret x);
       }.
-    Arguments l_send {T LocalType} A _ _.
-    Arguments l_recv {T LocalType} A _ _.
-    Arguments l_end {T LocalType} A.
+    Arguments l_send [T] & [LocalType] A _ _.
+    Arguments l_recv [T] & [LocalType] A _ _.
+    Arguments l_end  [T] & [LocalType] A.
 
     Declare Scope lty_scope.
     Delimit Scope lty_scope with lty.
     Notation "X '<-' p '!!' e ';;' K" :=
       (l_send e p (fun X => K))
         (at level 60, right associativity) : lty_scope.
+    Notation "X '@@' P '<-' p '!!' e ';;' K" :=
+      (l_send e p (fun X =>
+                     match X with
+                     | P => K
+                     | _ => l_impossible unit
+                     end))
+        (at level 60, P pattern, right associativity) : lty_scope.
     Notation "X '<-' p '??' e ';;' K" :=
       (l_recv e p (fun X => K))
         (at level 60, right associativity) : lty_scope.
+    Notation "X '@@' P '<-' p '??' e ';;' K" :=
+      (l_recv e p (fun X =>
+                     match X with
+                     | P => K
+                     | _ => _
+                     end))
+        (at level 60, P pattern, right associativity) : lty_scope.
   End LocalTypes.
 
   Import LocalTypes.
@@ -375,36 +387,62 @@ Module PingPong.
     end.
   Close Scope expr_scope.
 
-  Definition f_uninhab : ftree LTy Type :=
-    {| fobserve := Tau {| fobserve := Tau (l_end unit) |} |}.
-
-  Definition i_uninhab : itree LTy Type :=
-    {| observe := Tau {| observe := Tau (l_end unit) |} |}.
-
-
-  (** TODO: define notation for sending single label *)
   Fixpoint fin_client (n : nat) (p : P) : ftree LTy Type :=
     match n with
-    | 0 =>
-      n0 <- p !! option nat;;
-         match n0 with
-         | None => l_end unit
-         | Some _ => f_uninhab
-         end
-    | m.+1 =>
-      n0 <- p !! option nat;;
-         match n0 with
-         | Some _ => _ <- p ?? nat;; fin_client m p
-         | None => f_uninhab
-         end
+    | 0    => x @@ None <- p !! option nat;; l_end unit
+    | m.+1 => x <- p !! option nat;;
+                match x with
+                | None => l_end unit
+                | Some _ => x <- p ?? nat;;
+                              fin_client m p
+                end
     end.
+
+  (** One annoyance of protocols like below is that they MUST inspect
+   * [n], othewise the protocol will not reduce. E.g. it is clear that
+   * sending None ends the protocol. But due to [fix], Coq will not know
+   * that unless it is applied to a constructor
+   *)
+  Definition fin_client_alt (n : nat) (p : P) : ftree LTy Type :=
+    x  <- p !! option nat;;
+       (fix rec (x : option nat) (n : nat) :=
+          match x with
+          | None => l_end unit
+          | Some _ =>
+            match n with
+            | 0 => l_impossible unit
+            | m.+1 => x <- p ?? nat;;
+                      x <- p !! option nat ;;
+                      rec x m
+            end
+          end) x n.
   Close Scope lty_scope.
   Open Scope expr_scope.
 
+  Inductive Option := Continue | Stop.
   Fixpoint weirdest_client (n : nat) (p : P) : io_proc (fin_client n p) :=
     match n with
     | 0 => p ! None ;; RET tt
-    | m.+1 => p ! Some n ;; _ <- p ? ;; weirdest_client m p
+    | m.+1 => a <- read Option;;
+                match a with
+                | Continue =>
+                  p ! Some n ;;
+                  _ <- p ? ;;
+                  weirdest_client m p
+                | Stop => p ! None ;; RET tt
+                end
+    end.
+  Fixpoint weirdestest_client (n : nat) (p : P) : io_proc (fin_client_alt n p) :=
+    match n with
+    | 0 => p ! None ;; RET tt
+    | m.+1 => a <- read Option;;
+                match a with
+                | Continue =>
+                  p ! Some n ;;
+                  _ <- p ? ;;
+                  weirdestest_client m p
+                | Stop => p ! None ;; RET tt
+                end
     end.
 
   Fail Fixpoint weirdest_client1 (n : nat) (p : P) : io_proc (fin_client n p) :=
@@ -412,14 +450,69 @@ Module PingPong.
     | 0 => p ! Some 0 ;; _ <- p ? ;; RET tt
     | m.+1 => p ! Some n ;; _ <- p ? ;; weirdest_client1 m p
     end.
-  Fail Fixpoint weirdest_client2 (n : nat) (p : P) : io_proc (fin_client n p) :=
+  Fixpoint weirdest_client2 (n : nat) (p : P) : io_proc (fin_client n p) :=
     match n with
     | 0 => p ! None ;; RET tt
     | m.+1 => p ! None ;; RET tt
     end.
 
-
+  Fixpoint weirdestest_client1 (n : nat) (p : P) : io_proc (fin_client_alt n p) :=
+    p ! None ;;
+      match n with
+      | 0 => RET tt
+      | m.+1 => RET tt
+      end.
+  Fail CoFixpoint weirdestest_client1 (n : nat) (p : P) : io_proc (fin_client_alt n p) :=
+    p ! Some n ;;
+      match n with
+      | 0 => weirdestest_client1 0 p
+      | m.+1 => _ <- p ? ;; weirdestest_client1 m p
+      end.
 End PingPong.
+
+Module DependentProtocols.
+  Import ITree.
+  Import LocalTypes.
+  Open Scope lty_scope.
+
+  Definition send_n (k : itree LTy Type) : P -> nat -> itree LTy Type :=
+    cofix send_n p n : itree LTy Type :=
+      match n with
+      | 0 => k
+      | m.+1 => x <- p !! nat ;; send_n p m
+      end.
+
+  CoFixpoint send_n_tasks (p : P) : itree LTy Type :=
+    n <- p ?? nat ;; send_n p n (send_n_tasks p).
+    l_recv nat p
+            (fun n : nat =>
+               (cofix send_n_msgs (p0 : P) (n0 : nat) : itree LTy Type :=
+                  match n0 return (itree LTy Type) with
+                  | O => send_n_tasks p0
+                  | S m =>
+                    @l_send (itree LTy Type) infLocalType nat p0
+                            (fun _ : nat => send_n_msgs p0 m : itree LTy Type)
+                  end) p n).
+  (* := *)
+    refine (
+    n <- p ?? nat ;;
+    (cofix send_n_msgs (p : P) (n : nat) : itree LTy Type :=
+       match n with
+       | 0 => send_n_tasks p
+       | m.+1 => x <- p !! nat ;; _
+       (* | m.+1 => x <- p !! nat ;; send_n_msgs p n *)
+       end
+  ) p n
+    ).
+    exact (send_n_msgs p m).
+    Defined.
+  Set Printing All.
+  Print send_n_tasks.
+  .
+
+
+
+End DependentProtocols.
 
 Module Global.
 
