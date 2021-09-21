@@ -1,5 +1,7 @@
--R theories/ WtProc
+-R theories/ Zooid2
+-R utils/ Utils
 -arg -w
 -arg all
 
-theories/Proc.v
+theories/Zooid.v
+utils/ZooidTac.v

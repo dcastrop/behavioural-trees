@@ -50,71 +50,88 @@ Module ITree.
 
     Inductive LTy (A : Type) := | LSend (p : P) | LRecv (p : P).
 
-    Class LocalType (T : Type) : Type :=
-      { run : T -> itreeF LTy Type T;
-        l_send : forall A, P -> (A -> T) -> T;
-        l_recv : forall A, P -> (A -> T) -> T;
-        l_end : Type -> T;
-        l_impossible : Type -> T;
-      }.
+    Record class (T : Type) :=
+      Class {
+          t_run : T -> itreeF LTy Type T;
+          mk_send : forall A, P -> (A -> T) -> T;
+          mk_recv : forall A, P -> (A -> T) -> T;
+          mk_end : Type -> T;
+          mk_impossible : Type -> T;
+        }.
 
-    Global Instance infLocalType : LocalType (itree LTy Type) | 0 :=
-      {
-        run := @inf_run LTy Type;
-        l_impossible := fun _ => cofix spin := go (Tau spin);
-        l_send := fun A p f =>
-                    go (Vis (LSend A p) f);
-        l_recv := fun A p f =>
-                    go (Vis (LRecv A p) f);
-        l_end := fun (x : Type) => go (Ret x);
-      }.
-    Global Instance finLocalType : LocalType (ftree LTy Type) | 0 :=
-      {
-        run := @fin_run LTy Type;
-        l_impossible := fun (x : Type) => fgo (Tau (fgo (Ret x)));
-        l_send := fun A p f =>
-                    fgo (Vis (LSend A p) f);
-        l_recv := fun A p f =>
-                    fgo (Vis (LRecv A p) f);
-        l_end := fun (x : Type) => fgo (Ret x);
-      }.
-    Arguments l_send [T] & [LocalType] A _ _.
-    Arguments l_recv [T] & [LocalType] A _ _.
-    Arguments l_end  [T] & [LocalType] A.
+    Structure type : Type := Pack { tree :> Type; class_of : class tree }.
+    Definition run (t : type) : tree t -> itreeF LTy Type (tree t)
+      := let 'Pack _ (Class the_op _ _ _ _) := t in the_op.
+    Definition send (t : type) : forall A, P -> (A -> tree t) -> tree t
+      := let 'Pack _ (Class _ the_op _ _ _) := t in the_op.
+    Definition recv (t : type) : forall A, P -> (A -> tree t) -> tree t
+      := let 'Pack _ (Class _ _ the_op _ _) := t in the_op.
+    Definition stop (t : type) : Type -> tree t
+      := let 'Pack _ (Class _ _ _ the_op _) := t in the_op.
+    Definition impossible (t : type) : Type -> tree t
+      := let 'Pack _ (Class _ _ _ _ the_op) := t in the_op.
+
+    Definition inf_ltyC : class (itree LTy Type) :=
+      {|
+        t_run := @inf_run LTy Type;
+        mk_impossible := fun _ => cofix spin := go (Tau spin);
+        mk_send := fun A p f => go (Vis (LSend A p) f);
+        mk_recv := fun A p f => go (Vis (LRecv A p) f);
+        mk_end := fun (x : Type) => go (Ret x);
+      |}.
+
+    Canonical Structure inf_lty : type := @Pack (itree LTy Type) inf_ltyC.
+
+    Definition fin_ltyC : class (ftree LTy Type) :=
+      {|
+        t_run := @fin_run LTy Type;
+        mk_impossible := fun x => fgo (Tau (fgo (Ret x)));
+        mk_send := fun A p f => fgo (Vis (LSend A p) f);
+        mk_recv := fun A p f => fgo (Vis (LRecv A p) f);
+        mk_end := fun (x : Type) => fgo (Ret x);
+      |}.
+
+    Canonical Structure fin_lty : type := @Pack (ftree LTy Type) fin_ltyC.
+
+    Arguments send [t] A _ _.
+    Arguments recv [t] A _ _.
+    Arguments stop [t] A.
+    Arguments impossible [t] A.
 
     Declare Scope lty_scope.
     Delimit Scope lty_scope with lty.
     Notation "X '<-' p '!!' e ';;' K" :=
-      (l_send e p (fun X => K))
+      (send e p (fun X => K))
         (at level 60, right associativity) : lty_scope.
     Notation "X '@@' P '<-' p '!!' e ';;' K" :=
-      (l_send e p (fun X =>
-                     match X with
-                     | P => K
-                     | _ => l_impossible unit
-                     end))
+      (send e p (fun X =>
+                   match X with
+                   | P => K
+                   | _ => impossible unit
+                   end))
         (at level 60, P pattern, right associativity) : lty_scope.
     Notation "X '<-' p '??' e ';;' K" :=
-      (l_recv e p (fun X => K))
+      (recv e p (fun X => K))
         (at level 60, right associativity) : lty_scope.
     Notation "X '@@' P '<-' p '??' e ';;' K" :=
-      (l_recv e p (fun X =>
-                     match X with
-                     | P => K
-                     | _ => _
-                     end))
+      (recv e p (fun X =>
+                   match X with
+                   | P => K
+                   | _ => impossible unit
+                   end))
         (at level 60, P pattern, right associativity) : lty_scope.
+
+    Definition lty := type.
+    About run.
   End LocalTypes.
 
-  Import LocalTypes.
-
   Section WellTypedProcesses.
+    Import LocalTypes.
 
     Variable E : Type -> Type.
-    Variable T : Type.
-    Variable L : LocalType T.
+    Variable T : lty.
 
-    Inductive ev l : forall A, (A -> T) -> Type :=
+    Inductive ev (l : T) : forall A, (A -> T) -> Type :=
     | E_send {A} x p k (H : Vis (LSend A p) k = run l) : @ev l unit (fun _ => k x)
     | E_recv {A} p k (H : Vis (LRecv A p) k = run l) : @ev l A k
     | E_run {A} (e : E A) : @ev l A (fun _ =>l).
@@ -124,8 +141,10 @@ Module ITree.
 
     Inductive procF (proc : T -> Type) : T -> Type :=
     | P_ev {A k l} (e : @ev l A k) (kp : forall x, proc (k x)) : procF proc l
+    | P_call {l1} (k : proc l1) {l2} (_ : run l1 = run l2) : procF proc l2
     | P_end {A : Type} (x : A) l (_ : Ret A = run l) : procF proc l.
-    Arguments P_ev [proc A k] & [l] e kp.
+    Arguments P_ev [proc A k] & {l} e kp.
+    Arguments P_call [proc l1] k & {l2} H.
     Arguments P_end [proc A] x & [l] _.
 
     CoInductive proc (l : T) : Type :=
@@ -144,6 +163,10 @@ Module ITree.
       : proc l := Go (P_ev (E_recv p H) k).
     Arguments p_recv [A] p & [l kl] H k.
 
+    Definition p_call {l1} (k : proc l1) {l2} (H : run l1 = run l2) : proc l2
+      := Go (P_call k H).
+    Arguments p_call [l1] k & {l2} H.
+
     Definition pure [A : Type] (x : A) l (H : Ret A = run l) : proc l :=
       Go (P_end x H).
     Arguments pure [A] x & [l] _.
@@ -157,23 +180,59 @@ Module ITree.
          end.
     Arguments ifB & [l1 l2] b p1 p2.
   End WellTypedProcesses.
-  About E_send.
 
-  Arguments E_send & [E T L l A] x p [k] H.
-  Arguments E_recv & [E T L l A] p [k] H.
-  Arguments E_run & [E T L l A] e.
-  Arguments P_ev [E T L proc A k] & [l] e kp.
-  Arguments P_end [E T L proc A] x & [l] _.
-  Arguments Go & [E T L l].
-  Arguments p_send [E T L A] x p & [l kl] H k.
-  Arguments p_recv [E T L A] p & [l kl] H k.
-  Arguments pure [E T L A] x & [l] _.
-  Arguments ifB & [E T L l1 l2] b p1 p2.
+  Section Testing.
+    Import LocalTypes.
+    Definition runs_ok (l : itree LTy Type) : Prop :=
+      match inf_run l with
+      | Vis _ _ _ => True
+      | Ret _ => True
+      | Tau _ => False
+      end.
+
+    Lemma wrap_unwrap (t : itree LTy Type) (H : runs_ok t) :
+      inf_run t = inf_run (go (inf_run t)).
+    Proof. by move: H; rewrite /runs_ok; case: (inf_run t). Qed.
+
+    Variable E : Type -> Type.
+
+    CoFixpoint run_lty {l} (P : proc E l) : proc E (go (run l)).
+    move: P => /observeP; case.
+    - move=>A k {}l []/=.
+      + move=> {}A x p {}k <- kp; apply/Go/(P_ev _ kp).
+        by apply/(E_send (l := go (Vis (LSend A p) k)) E x Logic.eq_refl).
+      + move=> {}A   p {}k <- kp; apply/Go/(P_ev _ kp).
+        by apply/(E_recv (l := go (Vis (LRecv A p) k)) E   Logic.eq_refl).
+      + move=> {k}A e kp; apply/Go/(P_ev _ (fun x => run_lty _ (kp x))).
+        by apply/(E_run _ e).
+    - move=>{l}l1 pl l2 Heq.
+      move: (run_lty _ pl)=>{}pl.
+      apply/Go/(P_call E pl).
+      by rewrite Heq.
+    - move=>{}A x {}l Heq.
+      apply/Go/(P_end E (@proc E inf_lty) x).
+      by rewrite -Heq.
+    Defined.
+
+  End Testing.
+
+  Arguments E_send & [E T l A] x p [k] H.
+  Arguments E_recv & [E T l A] p [k] H.
+  Arguments E_run & [E T l A] e.
+  Arguments P_ev [E T proc A k] & [l] e kp.
+  Arguments P_end [E T proc A] x & [l] _.
+  Arguments Go & [E T l].
+  Arguments p_send [E T A] x p & [l kl] H k.
+  Arguments p_recv [E T A] p & [l kl] H k.
+  Arguments p_call [E T l1] k & {l2} H.
+  Arguments pure [E T A] x & [l] _.
+  Arguments ifB & [E T l1 l2] b p1 p2.
 
   Declare Scope expr_scope.
   Bind Scope expr_scope with proc.
   Delimit Scope expr_scope with expr.
   Notation "'RET' x" := (pure x Logic.eq_refl) (at level 60) : expr_scope.
+  Notation "'CALL' x" := (p_call x Logic.eq_refl) (at level 60) : expr_scope.
   Notation "p '!' e ';;' K" :=
     (p_send e p Logic.eq_refl (fun _ =>K))
       (right associativity, at level 60) : expr_scope.
@@ -211,17 +270,17 @@ Module Examples.
   CoFixpoint example : itree LTy Type :=
     n <- p !! nat ;;
       match n  with
-      | 0 => l_end bool
+      | 0 => stop bool
       | m.+1 => b <- p !! bool ;; example
       end.
 
   Fixpoint fexample (r : nat) : ftree LTy Type :=
     n <- p !! nat ;;
       match n with
-      | 0 => l_end bool
+      | 0 => stop bool
       | m.+1 => b <- p !! bool ;;
                   match r with
-                  | 0 => l_end nat
+                  | 0 => stop nat
                   | r.+1 => fexample r
                   end
       end.
@@ -229,7 +288,6 @@ Module Examples.
 
   Open Scope expr_scope.
   Definition pure_proc := proc (fun _ => False).
-  Arguments pure_proc [T L] _.
 
   Fail CoFixpoint prog1 : pure_proc example
     := p ! 1 ;; p ! true ;; RET 1.
@@ -267,7 +325,7 @@ Module Examples.
   CoFixpoint example2 : itree LTy Type :=
     n <- p ?? nat ;;
       match n with
-      | 0 => l_end bool
+      | 0 => stop bool
       | m.+1 => b <- p !! bool ;; example2
       end.
   CoFixpoint prog21 : pure_proc example2 :=
@@ -282,7 +340,7 @@ Module Examples.
   CoFixpoint example3 : itree LTy Type :=
     n <- p ?? nat ;;
       if n > 27
-      then l_end bool
+      then stop bool
       else b <- p !! bool ;; example3.
   Close Scope lty_scope.
 
@@ -312,7 +370,6 @@ Module IOProc.
   Import ITree.
 
   Definition io_proc := proc IO.
-  Arguments io_proc [T L] _.
 
   Notation "'write' e ';;' K" :=
     (Go (P_ev (E_run (Write e)) (fun _ => K)))
@@ -331,18 +388,16 @@ Module PingPong.
   CoFixpoint pp_client (p : P) : itree LTy Type :=
     n <- p !! option nat ;;
       match n with
-      | None => l_end unit
+      | None => stop unit
       | Some n => _ <- p ?? nat ;; pp_client p
-      end
-      % lty.
+      end.
 
   CoFixpoint pp_server (p : P) : itree LTy Type :=
     n <- p ?? option nat ;;
       match n with
-      | None => l_end unit
+      | None => stop unit
       | Some n => _ <- p !! nat ;; pp_server p
-      end
-      % lty.
+      end.
 
   Inductive PingTy := Ping (n : nat) | Close.
 
@@ -389,10 +444,10 @@ Module PingPong.
 
   Fixpoint fin_client (n : nat) (p : P) : ftree LTy Type :=
     match n with
-    | 0    => x @@ None <- p !! option nat;; l_end unit
+    | 0    => x @@ None <- p !! option nat;; stop unit
     | m.+1 => x <- p !! option nat;;
                 match x with
-                | None => l_end unit
+                | None => stop unit
                 | Some _ => x <- p ?? nat;;
                               fin_client m p
                 end
@@ -407,10 +462,10 @@ Module PingPong.
     x  <- p !! option nat;;
        (fix rec (x : option nat) (n : nat) :=
           match x with
-          | None => l_end unit
+          | None => stop unit
           | Some _ =>
             match n with
-            | 0 => l_impossible unit
+            | 0 => impossible unit
             | m.+1 => x <- p ?? nat;;
                       x <- p !! option nat ;;
                       rec x m
@@ -473,45 +528,30 @@ End PingPong.
 Module DependentProtocols.
   Import ITree.
   Import LocalTypes.
-  Open Scope lty_scope.
+  Import IOProc.
 
-  Definition send_n (k : itree LTy Type) : P -> nat -> itree LTy Type :=
-    cofix send_n p n : itree LTy Type :=
+  Open Scope lty_scope.
+  Definition repeat_send (p : P) k : nat -> itree LTy Type :=
+    cofix repeat_n n :=
       match n with
       | 0 => k
-      | m.+1 => x <- p !! nat ;; send_n p m
+      | m.+1 => x <- p !! nat;; repeat_n m
       end.
-
-  CoFixpoint send_n_tasks (p : P) : itree LTy Type :=
-    n <- p ?? nat ;; send_n p n (send_n_tasks p).
-    l_recv nat p
-            (fun n : nat =>
-               (cofix send_n_msgs (p0 : P) (n0 : nat) : itree LTy Type :=
-                  match n0 return (itree LTy Type) with
-                  | O => send_n_tasks p0
-                  | S m =>
-                    @l_send (itree LTy Type) infLocalType nat p0
-                            (fun _ : nat => send_n_msgs p0 m : itree LTy Type)
-                  end) p n).
-  (* := *)
-    refine (
+  CoFixpoint request_n_tasks (p : P) : itree LTy Type :=
     n <- p ?? nat ;;
-    (cofix send_n_msgs (p : P) (n : nat) : itree LTy Type :=
-       match n with
-       | 0 => send_n_tasks p
-       | m.+1 => x <- p !! nat ;; _
-       (* | m.+1 => x <- p !! nat ;; send_n_msgs p n *)
-       end
-  ) p n
-    ).
-    exact (send_n_msgs p m).
-    Defined.
-  Set Printing All.
-  Print send_n_tasks.
-  .
+      repeat_send p (request_n_tasks p) n.
+  Close Scope lty_scope.
 
+  Definition Task := nat.
+  Open Scope expr_scope.
 
-
+  CoFixpoint example_server (p : P) : io_proc (request_n_tasks p)
+    := n <- p ? ;;
+         ((cofix rec n : io_proc (repeat_send p (request_n_tasks p) n) :=
+             match n with
+             | 0 => CALL (example_server p)
+             | m.+1 => x <- read Task;; p ! x ;; rec m
+             end) n).
 End DependentProtocols.
 
 Module Global.
