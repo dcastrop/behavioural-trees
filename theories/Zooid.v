@@ -85,100 +85,50 @@ Notation "X '<-' p '??' T ';;' K" :=
   (mk_lty
      (l_recv p T (fun X => K)))
     (at level 60, right associativity) : lty_scope.
-Notation "X '@@' P '<-' p '??' T ';;' K" :=
-  (mk_lty
-     (l_recv p T (fun X =>
-                    match X with
-                    | P => K
-                    | _ => mk_lty l_bot
-                    end)))
-    (at level 60, P pattern, right associativity) : lty_scope.
 
 Section Processes.
   Context (E : Type -> Type).
 
-  Definition IS_SEND X (L : ltyF X) :=
-    match L with
-    | l_send _ _ _ => true
-    | _ => false
-    end.
-  Definition IS_RECV X (L : ltyF X) :=
-    match L with
-    | l_recv _ _ _ => true
-    | _ => false
-    end.
-  Definition SUBJ X (L : ltyF X) p :=
-    match L with
-    | l_send p' _ _ | l_recv p' _ _ => (p =? p')%int63
-    | _ => false
-    end.
-  Definition CAN_SEND_ p X (L : ltyF X) := IS_SEND L && SUBJ L p.
-  Definition CAN_RECV_ p X (L : ltyF X) := IS_RECV L && SUBJ L p.
+  Notation CAN_SEND p T kL L := (run_lty L = l_send p T kL).
+  Notation CAN_RECV p T kL L := (run_lty L = l_recv p T kL).
 
-  Definition CAN_SEND p L := CAN_SEND_ p (run_lty L).
-  Definition CAN_RECV p L := CAN_RECV_ p (run_lty L).
+  Notation IS_SEND := (@erefl _ (l_send _ _ _)).
+  Notation IS_RECV := (@erefl _ (l_recv _ _ _)).
 
-  Definition PL_ X (L : ltyF X) : Type :=
-    match L with
-    | l_send _ T _ => T
-    | l_recv _ T _ => T
-    | _ => False
-    end.
-  Definition PL L := PL_ (run_lty L).
-
-  Inductive msg L : Type -> Type :=
-  | Send p (H : CAN_SEND p L) (x : PL L) : @msg L unit
-  | Recv p (H : CAN_RECV p L) : @msg L (PL L)
-  | Eff {T} (e : E T) : @msg L T
+  Inductive msg L : forall T, (T -> lty) -> Type :=
+  | Send p T  (x : T) kL (H : CAN_SEND p T kL L) : @msg L unit (fun=>kL x)
+  | Recv p T          kL (H : CAN_RECV p T kL L) : @msg L T    kL
+  (* Silent action *)
+  | Eff T (e : E T) : @msg L T (fun=> L)
   .
 
-  Definition RUN_SEND_ {p X L} : @CAN_SEND_ p X L -> PL_ L -> X :=
-    match L return @CAN_SEND_ p X L -> PL_ L -> X with
-    | l_send _ _ kL => fun=>kL
-    | _ => fun F => match notF F with end
-    end.
-  Definition RUN_RECV_ {p X L} : @CAN_RECV_ p X L -> PL_ L -> X :=
-    match L return @CAN_RECV_ p X L -> PL_ L -> X with
-    | l_recv _ _ kL => fun=>kL
-    | _ => fun F => match notF F with end
-    end.
-  Definition RUN_SEND {p L} : CAN_SEND p L -> PL L -> lty
-    := RUN_SEND_ (L:=run_lty L).
-  Definition RUN_RECV {p L} : CAN_RECV p L -> PL L -> lty
-    := RUN_RECV_ (L:=run_lty L).
-
-  Definition RUN L T (e : msg L T) : T -> lty :=
-    match e with
-    | Send _ H x => fun=> RUN_SEND H x
-    | Recv _ H => RUN_RECV H
-    | _ => fun=> L
-    end.
-
-  Definition IS_END_ X (L : ltyF X) :=
-    match L with
-    | l_end => true
-    | _ => false
-    end.
-  Definition IS_END (L : lty) := IS_END_ (run_lty L).
+  Notation CAN_END L := (run_lty L = l_end).
+  Notation IS_END := (@erefl _ l_end).
 
   Inductive procF (X : lty -> Type) (L : lty) :=
-  | Inact (_ : IS_END L)
+  | Inact (_ : CAN_END L)
   | Tau (k : X L)
-  | Do {T}  (e : @msg L T) (k : forall x, X (RUN e x))
+  | Do {T kL} (e : @msg L T kL) (k : forall x, X (kL x))
   .
 End Processes.
 
+Notation CAN_SEND p T kL L := (run_lty L = l_send p T kL).
+Notation CAN_RECV p T kL L := (run_lty L = l_recv p T kL).
+Notation IS_SEND := (@erefl _ (l_send _ _ _)).
+Notation IS_RECV := (@erefl _ (l_recv _ _ _)).
+Notation CAN_END L := (run_lty L = l_end).
+Notation IS_END := (@erefl _ l_end).
 
 CoInductive proc E L := mk_proc { observe : @procF E (proc E) L }.
 Definition iproc E L := procF E (proc E) L.
 
 Arguments mk_proc & [E L] observe.
-Arguments Send & {E L} p H x.
-Arguments Recv & {E L} p H.
+Arguments Send & {E L} p {T} x {kL} H.
+Arguments Recv & {E L} p {T kL} H.
 Arguments Eff & {E L T} e.
 Arguments Inact & {E X L}.
 Arguments Tau & {E X L } k.
-Arguments Do & {E X L T} e k.
+Arguments Do & {E X L T kL} e k.
 
 (** This defines processes ([proc]) with _shallow_ embeddings of binders.
 Particularly, this uses regular Coq binders and functions for expressions, and
@@ -186,25 +136,25 @@ requires building greatest fixpoints for recursion. *)
 
 Coercion mkProc E L (x : iproc E L) := mk_proc x.
 
-Definition pInact E L (H : IS_END L) : proc E L := mk_proc (Inact H).
+Definition pInact E L (H : CAN_END L) : proc E L := mk_proc (Inact H).
 Definition pTau E L (k : proc E L) : proc E L := mk_proc (Tau k).
-Definition pDo E L T (e : @msg E L T) k : proc E L := mk_proc (Do e k).
-Definition pSend E L p (H : CAN_SEND p L) x k : proc E L := pDo (Send p H x) k.
-Definition pRecv E L p (H : CAN_RECV p L) k : proc E L := pDo (Recv p H) k.
+Definition pDo E L T kL (e : @msg E L T kL) k : proc E L := mk_proc (Do e k).
+Definition pSend E L p T x kL (H : CAN_SEND p T kL L) k : proc E L := pDo (Send p x H) k.
+Definition pRecv E L p T kL (H : CAN_RECV p T kL L) k : proc E L := pDo (Recv p H) k.
 Arguments pInact & {E L}.
 Arguments pTau & {E L} k.
-Arguments pDo & {E L T} e k.
-Arguments pSend & {E L} p H x k.
-Arguments pRecv & {E L} p H k.
+Arguments pDo & {E L T kL} e k.
+Arguments pSend & {E L} p {T} x {kL} H k.
+Arguments pRecv & {E L} p T {kL} H k.
 
 Declare Scope proc_scope.
-Notation stop := (pInact is_true_true).
+Notation stop := (pInact erefl).
 Notation "'call' K" := (pTau K) (at level 60, no associativity).
 Notation "p '<~' x ';;' k" :=
-  (pSend p is_true_true x (fun=> k))
+  (pSend p x IS_SEND (fun=> k))
     (at level 60, right associativity) : proc_scope.
 Notation "x ':' T '::=' '<~' p ';;' k" :=
-  (pRecv p is_true_true (fun (x : T) => k))
+  (pRecv p T IS_RECV (fun x => k))
     (at level 60, right associativity) : proc_scope.
 Notation "x ':' T '::=' 'lift' e ';;' k" :=
   (pDo (Eff e) (fun (x : T) => k))
@@ -250,7 +200,7 @@ Section ProcExamples.
   Open Scope proc_scope.
   Example ping_Alice : process NRAlice :=
     Bob <~ 0;;
-    _ : nat ::= <~ Bob ;;
+      _ : nat ::= <~ Bob;;
     stop.
   Example ping_Bob : process NRBob :=
     n : nat ::= <~ Alice ;;
@@ -369,9 +319,9 @@ Section ProcLTS.
     iproc E L -> option rt_event -> forall L', proc E L' -> Prop
     :=
     (* Observable actions *)
-    | step_send q x WT k :
-        proc_step p (Do (Send q WT x) k) (Some (mk_obs a_send p q x)) (k tt)
-    | step_recv q x WT k :
+    | step_send q T (x : T) kL (WT : CAN_SEND q T kL L) k :
+        proc_step p (Do (Send q x WT) k) (Some (mk_obs a_send p q x)) (k tt)
+    | step_recv q T (x : T) kL (WT : CAN_RECV q T kL L) k :
         proc_step p (Do (Recv q WT  ) k) (Some (mk_obs a_recv q p x)) (k x )
 
     (* Silent actions *)
@@ -465,42 +415,16 @@ events. **)
   Lemma subject_reduction p L0 (e0 : iproc E L0) L1 (e1 : proc E L1) ev :
     proc_step p e0 (Some ev) e1 -> lty_step p (run_lty L0) (event_type ev) L1.
   Proof.
+    (* Generalize [Some ev] and remember that [EQ : mev = Some ev] in [St] *)
+    move EQ: (Some ev)=> mev St.
+
     (* By case analysis on the process step *)
-    move EQ: (Some ev)=> mev St; case: St EQ=>//= q.
-    { (* Case send *)
-
-      (* Unfold the constraints for sending*)
-      rewrite /CAN_SEND/CAN_SEND_/RUN_SEND/PL/= => x WT _.
-
-      (* Rewrite the event *)
-      move=> [->]{ev}.
-
-      (* Case analysis on the local type, with the constraint required by the
-         process to send ([WT]) *)
-      case: (run_lty L0) x WT=>//= q' T kL x /int_eqP<-{q'}.
-
-      (* Apply the constructor for local type step*)
-      by constructor.
-    }
-    { (* Case recv *)
-
-      (* Unfold the constraints for receiving *)
-      rewrite /CAN_RECV/CAN_RECV_/RUN_RECV/PL/= => x WT _.
-
-      (* Rewrite the event *)
-      move=>[->]{ev}.
-
-      (* Case analysis on the local type, constrained by [WT] *)
-      case: (run_lty L0) x WT=>//= q' T kL x /int_eqP<-{q'}.
-
-      (* Apply the constructor for local type step*)
-      by constructor.
-    }
+    by case: St EQ=>//= q T x kL -> _ [->]; constructor.
   Qed.
 
   Lemma step_silent p L0 (e0 : iproc E L0) L1 (e1 : proc E L1) :
     proc_step p e0 None e1 -> L0 = L1.
-  Proof. by elim/proc_step_inv. Qed.
+  Proof. by case EQ: _ _ _ /.  Qed.
 
   Theorem trace_soundness p RT_TRC L (e : proc E L) :
     proc_accepts p RT_TRC         e ->
@@ -557,8 +481,8 @@ events. **)
 
         (* Straightforward by applying the coinduction hypothesis *)
 
-        (* First rewrite [Acc] so it states that the process accepts the remainder of
-           the trace*)
+        (* First rewrite [Acc] so it states that [e1] accepts the remainder of
+           the trace [T1]*)
         move: EQ Acc=><-[Acc|//] {RR}.
 
         (* Then apply the coinduction hypothesis to [Acc] *)
@@ -577,16 +501,16 @@ that somewhat resembles that of _effect handlers_, by assigning to each
 construct an **interpretation** as an OCaml function. **)
 
 Require Extraction ExtrOCamlInt63.
-Extraction Implicit Send [ L ].
-Extraction Implicit Recv [ L ].
+Extraction Implicit Send [ L kL ].
+Extraction Implicit Recv [ L kL ].
 Extraction Implicit Eff [ L ].
-Extraction Implicit Do [ L ].
+Extraction Implicit Do [ L kL ].
 Extraction Implicit Tau [ L ].
 Extraction Implicit Inact [ L ].
 
-Extraction Implicit pSend [ L ].
-Extraction Implicit pRecv [ L ].
-Extraction Implicit pDo [ L ].
+Extraction Implicit pSend [ L kL ].
+Extraction Implicit pRecv [ L kL ].
+Extraction Implicit pDo [ L kL ].
 Extraction Implicit pTau [ L ].
 Extraction Implicit pInact [ L ].
 
@@ -596,5 +520,5 @@ Module ProcExtraction.
   Extract Inlined Constant pRecv => "(fun p k -> let* x = Proc.recv p in k)".
 End ProcExtraction.
 
-Extraction ping_Alice.
+Recursive Extraction ping_Alice.
 Extraction infinite_ping_Alice.
