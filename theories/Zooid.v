@@ -40,6 +40,9 @@ Proof.
   - by move=>/negP-H; constructor=>/eqb_complete/H.
 Qed.
 
+Definition int_eqMixin := EqMixin int_eqP.
+Canonical int_eqType := Eval hnf in EqType participant int_eqMixin.
+
 (* end details *)
 
 (** We introduce a typing discipline for [proc], to constraint the kinds of

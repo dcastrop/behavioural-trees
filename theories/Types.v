@@ -206,6 +206,33 @@ Section StandardGlobalTypes.
   (* Canonical Behav_eqType (A : eqType) := *)
   (*   Eval hnf in EqType (Behav A) (Behav_eqMixin A). *)
 
+  (*free vars and closedness*)
+
+  Fixpoint b_fvars_aux A c (B : Behav A) :=
+    match B with
+    | b_bot => [::]
+    | b_end => [::]
+    | b_var t => if c <= t then [:: t] else [::]
+    | b_rec B1 => b_fvars_aux (c.+1) B1
+    | b_act _ S a k => flatten (map (fun x=> b_fvars_aux c x.2) k)
+    end.
+
+  Definition b_fvars A (B : Behav A) := b_fvars_aux 0 B.
+
+  Definition b_closed A (B : Behav A) := b_fvars B == [::].
+
+  (*free from bot*)
+
+  Fixpoint no_bot A (B : Behav A):=
+    match B with
+    | b_bot => false
+    | b_end => true
+    | b_var t => true
+    | b_rec B1 => no_bot B1
+    | b_act _ S a k => all (fun x => no_bot (x.2)) k
+    end.
+
+
   Fixpoint b_shift A c (B : Behav A) :=
     match B with
     | b_var t => if t < c then B else b_var t.+1
@@ -268,6 +295,20 @@ Section StandardGlobalTypes.
 
   Definition LocalType := Behav lprefix.
 
+  (*participants of a global type*)
+
+  Fixpoint g_part G :=
+    match G with
+    | b_end => [::]
+    | b_bot => [::]
+    | b_var t => [::]
+    | b_rec G1 => g_part G1
+    | b_act _ S1 a1 k1 =>
+      (gfrom a1) :: ((gto a1) :: flatten (map (fun x => (g_part x.2)) k1) )
+    end.
+
+
+
   Definition guard b (L : LocalType) :=
     if b then L else b_bot.
 
@@ -325,19 +366,26 @@ Section StandardGlobalTypes.
     | _    , _     => merge_all [seq x.2 | x <- k]
     end.
 
-  Definition mk_rec A (B : Behav A) :=
+  (*Definition mk_rec A (B : Behav A) :=
     match B with
     | b_end => b_end
     | b_var 0 => b_end
     | _ => b_rec B
-    end.
+    end.*)
+
+  Definition mk_rec A r (M: GlobalType -> participant -> Behav A) G:=
+    if ((r \in (g_part G)) && (b_closed (b_rec G)) && (no_bot G))
+    then b_end
+    else b_rec (M G r).
+
 
   Fixpoint project (G : GlobalType) r : LocalType :=
     match G with
     | b_end => b_end
     | b_bot => b_bot
     | b_var t1 => b_var t1
-    | b_rec G1 => mk_rec (project G1 r)
+    | b_rec G1 => (*mk_rec (project G1 r)*)
+      mk_rec r project G1
     | b_act _ S1 a1 k1 =>
       proj_prefix a1 r S1 [seq (x.1, project x.2 r) | x <- k1]
     end.
@@ -455,7 +503,7 @@ Module GTYExamples.
   Arguments proc_rec & {A E L} f.
 
   Set Contextual Implicit.
-  Example ch_Bob0 : process CH1 Bob :=
+(*  Example ch_Bob0 : process CH1 Bob :=
     n : MyChoice ::= <~ Alice;;
     match n with
     | Case1 c =>
@@ -498,5 +546,5 @@ Module GTYExamples.
       Alice <~ Nat.even n;;
       n : nat ::= <~ Alice;;
       pingpong.
-  Close Scope proc_scope.
+  Close Scope proc_scope.*)
 End GTYExamples.
