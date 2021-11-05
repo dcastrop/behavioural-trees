@@ -4,7 +4,7 @@ Require Import Int63.
 
 
 Require Import Utils.ZooidTac.
-Require Export Zooid.
+Require Export Zooid2.Zooid.
 
 Set Implicit Arguments.
 Set Primitive Projections.
@@ -378,14 +378,16 @@ Section StandardGlobalTypes.
     then b_end
     else b_rec (M G r).
 
+  (*change boolean below*)
 
   Fixpoint project (G : GlobalType) r : LocalType :=
     match G with
     | b_end => b_end
     | b_bot => b_bot
     | b_var t1 => b_var t1
-    | b_rec G1 => (*mk_rec (project G1 r)*)
-      mk_rec r project G1
+    | b_rec G1 => if ((r \notin (g_part G1)) && (b_closed (b_rec G1)) && (no_bot G1))
+                  then b_end
+                  else b_rec (project G1 r)
     | b_act _ S1 a1 k1 =>
       proj_prefix a1 r S1 [seq (x.1, project x.2 r) | x <- k1]
     end.
@@ -503,7 +505,8 @@ Module GTYExamples.
   Arguments proc_rec & {A E L} f.
 
   Set Contextual Implicit.
-(*  Example ch_Bob0 : process CH1 Bob :=
+
+  Example ch_Bob0 : process CH1 Bob :=
     n : MyChoice ::= <~ Alice;;
     match n with
     | Case1 c =>
@@ -546,5 +549,5 @@ Module GTYExamples.
       Alice <~ Nat.even n;;
       n : nat ::= <~ Alice;;
       pingpong.
-  Close Scope proc_scope.*)
+  Close Scope proc_scope.
 End GTYExamples.

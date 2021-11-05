@@ -3,6 +3,7 @@
 -arg -w
 -arg all
 
+theories/Types.v
 theories/Zooid.v
 utils/ZooidTac.v
-theories/Types.v
+
