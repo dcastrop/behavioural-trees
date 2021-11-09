@@ -379,6 +379,7 @@ Section StandardGlobalTypes.
     else b_rec (M G r).
 
   (*change boolean below*)
+  (*add if_projects_to_end function for the boolean and comment about the three parts*)
 
   Fixpoint project (G : GlobalType) r : LocalType :=
     match G with
