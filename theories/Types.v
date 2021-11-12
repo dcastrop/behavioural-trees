@@ -226,22 +226,20 @@ Fixpoint g_part G :=
   end.
 
 Definition guard b (L : LocalType) :=
-  if b then Some L else None.
+  if b then L else b_bot.
 
 Definition labels A B  (k : seq (A * B)) := [seq x.1 | x <- k].
 
 Fixpoint remove n (k : seq (nat * LocalType)) :=
   match k with
   | [::] => [::]
-  | h :: t => if h.1 == n then t
-              else h :: remove n t
+  | h :: t => if h.1 == n then t else h :: remove n t
   end.
 
-Fixpoint find n (k : seq (nat * LocalType)) : LocalType :=
+Fixpoint find n (k : seq (nat * LocalType)) : option LocalType :=
   match k with
-  | [::] => b_bot
-  | h :: t => if h.1 == n then h.2
-              else find n t
+  | [::] => None
+  | h :: t => if h.1 == n then Some h.2 else find n t
   end.
 
 Definition merge_recv (M : LocalType -> LocalType -> LocalType) :=
@@ -249,92 +247,76 @@ Definition merge_recv (M : LocalType -> LocalType -> LocalType) :=
     match k1 with
     | [::]  => k2
     | h1 :: t1 =>
-      (h1.1, (M h1.2 (find h1.1 k2))) :: mergeAll t1 (remove h1.1 k2)
+      match find h1.1 k2 with
+      | Some L => (h1.1, (M h1.2 L)) :: mergeAll t1 (remove h1.1 k2)
+      | None => h1 :: mergeAll t1 k2
+      end
     end.
 
-Fixpoint merge (L1 L2 : LocalType) : option LocalType :=
+Fixpoint merge (L1 L2 : LocalType) : LocalType :=
   match L1, L2 with
-  | b_bot, L => Some L
-  | L, b_bot => Some L
-  | b_rec L1, b_rec L2 => omap b_rec (merge L1 L2)
+  | b_bot, _ => b_bot
+  | _, b_bot => b_bot
+  | b_rec L1, b_rec L2 => b_rec (merge L1 L2)
   | b_act AT (mk_lprefix a_recv p1) k1, b_act _ (mk_lprefix a_recv p2) k2 =>
     guard (p1 == p2) (b_act AT (mk_lprefix a_recv p1) (merge_recv merge k1 k2))
   | L1, L2 => guard (eq_Behav _ L1 L2) L1
   end.
 
-  Definition merge_all (K : seq LocalType) :=
-    match K with
-    | [::] => b_bot
-    | h :: K => foldl merge h K
-    end.
+Definition merge_all (K : seq LocalType) :=
+  match K with
+  | [::] => b_bot
+  | h :: K => foldl merge h K
+  end.
 
-  Definition proj_prefix (g : gprefix) r L S k : LocalType :=
-    match Int63.eqb (gfrom g) r, Int63.eqb (gto g) r with
-    | true , false => @b_act _ L S (mk_lprefix a_send (gto g)) k
-    | false, true  => @b_act _ L S (mk_lprefix a_recv (gfrom g)) k
-    | _    , _     => merge_all [seq x.2 | x <- k]
-    end.
+Definition proj_prefix (g : gprefix) r S k : LocalType :=
+  match Int63.eqb (gfrom g) r, Int63.eqb (gto g) r with
+  | true , false => @b_act _ S (mk_lprefix a_send (gto g)) k
+  | false, true  => @b_act _ S (mk_lprefix a_recv (gfrom g)) k
+  | _    , _     => merge_all [seq x.2 | x <- k]
+  end.
 
-  (*Definition mk_rec A (B : Behav A) :=
-    match B with
-    | b_end => b_end
-    | b_var 0 => b_end
-    | _ => b_rec B
-    end.*)
-
-  Definition mk_rec A r (M: GlobalType -> participant -> Behav A) G:=
-    if ((r \in (g_part G)) && (b_closed (b_rec G)) && (no_bot G))
-    then b_end
-    else b_rec (M G r).
-
-  (*change boolean below*)
   (*add if_projects_to_end function for the boolean and comment about the three parts*)
 
-  Fixpoint project (G : GlobalType) r : LocalType :=
-    match G with
-    | b_end => b_end
-    | b_bot => b_bot
-    | b_var t1 => b_var t1
-    | b_rec G1 => if ((r \notin (g_part G1)) && (b_closed (b_rec G1)) && (no_bot G1))
-                  then b_end
-                  else b_rec (project G1 r)
-    | b_act _ S1 a1 k1 =>
-      proj_prefix a1 r S1 [seq (x.1, project x.2 r) | x <- k1]
-    end.
+Definition projects_to_end r G1 :=
+  (r \notin (g_part G1)) && (behav_closed 0 (b_rec G1)) && (no_bot G1).
 
-  Open Scope lty_scope.
-  CoFixpoint unravel (L : LocalType) : lty
-    := match b_unroll L with
-       | b_end => END
-       | b_act _ A a k =>
-         match lact a with
-         | a_send =>
-           X <- lsubj a !! sumT A;;
-           match find (sumT_alt A X) k with
-           | Some LT => unravel LT
-           | None => IMPOSSIBLE
-           end
-         | a_recv =>
-           X <- lsubj a ?? sumT A;;
-           match find (sumT_alt A X) k with
-           | Some LT => unravel LT
-           | None => IMPOSSIBLE
-           end
-         end
-       | _ => IMPOSSIBLE
-       end.
-  Close Scope lty_scope.
-End StandardGlobalTypes.
+Fixpoint project (G : GlobalType) r : LocalType :=
+  match G with
+  | b_end => b_end
+  | b_bot => b_bot
+  | b_var t1 => b_var t1
+  | b_rec G1 => if projects_to_end r G1 then b_end else b_rec (project G1 r)
+  | b_act A1 a1 k1 =>
+    proj_prefix a1 r A1 [seq (x.1, project x.2 r) | x <- k1]
+  end.
+
+(* Open Scope lty_scope. *)
+(*   CoFixpoint unravel (L : LocalType) : lty *)
+(*     := match b_unroll L with *)
+(*        | b_end => END *)
+(*        | b_act _ A a k => *)
+(*          match lact a with *)
+(*          | a_send => *)
+(*            X <- lsubj a !! sumT A;; *)
+(*            match find (sumT_alt A X) k with *)
+(*            | Some LT => unravel LT *)
+(*            | None => IMPOSSIBLE *)
+(*            end *)
+(*          | a_recv => *)
+(*            X <- lsubj a ?? sumT A;; *)
+(*            match find (sumT_alt A X) k with *)
+(*            | Some LT => unravel LT *)
+(*            | None => IMPOSSIBLE *)
+(*            end *)
+(*          end *)
+(*        | _ => IMPOSSIBLE *)
+(*        end. *)
+(*   Close Scope lty_scope. *)
 
 
 Definition single_choice (n : nat) T (x : T) := n.
-Lemma single_choice_in n T : forall x : T, single_choice n x \in [:: n].
-Proof.
-  by rewrite /single_choice/=in_cons eq_refl.
-Qed.
-
-Definition altT n (T : Type) : AltT [:: n]
-  := @MkAltT _ T (@single_choice n T) (@single_choice_in n T).
+Definition altT n (T : Type) : AltT := @MkAltT T (@single_choice n T).
 
 Declare Scope gty_scope.
 Delimit Scope gty_scope with gty.
@@ -347,12 +329,12 @@ Notation "'REC' '{' G '}'" := (@b_rec gprefix G) (at level 60, right associativi
 (*         (at level 60, right associativity) : gty_scope. *)
 
 Definition b_msg p q T G :=
-  @b_act _ _ (altT 0 T) (mk_gprefix p q) [:: (0, G)].
+  @b_act _ (altT 0 T) (mk_gprefix p q) [:: (0, G)].
 Notation "p '~>' q '$(' T ')' ';;' k" :=
   (b_msg p q T k)
         (at level 60, right associativity) : gty_scope.
 Notation "p '~>' q '${' T '}' ';;' k" :=
-  (@b_act _ _ T (mk_gprefix p q) k)
+  (@b_act _ T (mk_gprefix p q) k)
         (at level 60, right associativity) : gty_scope.
 
 (* Notation "n ':.' G" := *)
@@ -384,16 +366,12 @@ Module GTYExamples.
   Definition lbl1 := 0.
   Definition lbl2 := 1.
 
-  Definition MyChoiceT : AltT [:: lbl1; lbl2].
-    refine (@MkAltT _ MyChoice (fun x=>
-                                  match x with
-                                  | Case1 _ => lbl1
-                                  | Case2 _ => lbl2
-                                  end) _).
-    case=>_.
-    by rewrite in_cons eq_refl.
-    by rewrite in_cons orbC in_cons eq_refl.
-  Defined.
+  Definition MyChoiceT : AltT
+    := @MkAltT MyChoice (fun x=>
+                           match x with
+                           | Case1 _ => lbl1
+                           | Case2 _ => lbl2
+                           end).
 
   Example CH1 :=
     REC {
@@ -403,61 +381,85 @@ Module GTYExamples.
       ]
       }.
   Close Scope gty_scope.
-
-  Context (E : Type -> Type).
-  Notation process G r := (proc E (unravel (project G r))).
-
-  Example ended_proc : process END Alice := stop.
-
-  Open Scope proc_scope.
-
-  Definition proc_rec A E L (f : A -> proc E L) : A -> proc E L := f.
-  Arguments proc_rec & {A E L} f.
-
-  Set Contextual Implicit.
-
-  Example ch_Bob0 : process CH1 Bob :=
-    n : MyChoice ::= <~ Alice;;
-    match n with
-    | Case1 c =>
-      proc_rec
-        (cofix pingpong c :=
-         Alice <~ Nat.even c;;
-         n : MyChoice ::= <~ Alice;;
-         match n with
-         | Case1 c =>
-           pingpong c
-         | Case2 _ => stop
-         end) c
-    | Case2 _ =>
-      stop
-    end.
-  Example ping_Bob : process PP Bob :=
-      _ : nat ::= <~ Alice;;
-    Alice <~ true;;
-    stop.
-  Example ping_Alice n : process PP Alice :=
-    Bob <~ n ;;
-    n : bool ::= <~ Bob ;;
-    stop.
-
-  Example infinite_ping_Alice : nat -> process PPRec Alice :=
-    cofix pingpong x :=
-      Bob <~ x;;
-      _ : bool ::= <~ Bob;;
-      pingpong x.+1.
-
-  Example infinite_ping_Bob : process PPRec Bob :=
-    cofix pingpong :=
-      n : nat ::= <~ Alice;;
-      Alice <~ Nat.even n ;;
-      pingpong.
-
-  Example infinite_ping_Bob0 : process PPRec Bob :=
-    n : nat ::= <~ Alice;;
-    cofix pingpong :=
-      Alice <~ Nat.even n;;
-      n : nat ::= <~ Alice;;
-      pingpong.
-  Close Scope proc_scope.
 End GTYExamples.
+
+(** ** Semantics of Local Types *)
+
+(** *** Actions **)
+
+(** Actions capture the kind of event that happened (send/receive), and the
+necessary information about who performed the action, the other party, and the
+payload type. **)
+
+Record event :=
+  mk_ev { action_type : action;
+          subj : participant;
+          part : participant;
+          payload_type : Type;
+        }.
+
+(** *** Traces **)
+(** Traces are (potentially infinite) streams of events. They are parameterised
+ by the type of events. **)
+
+Inductive traceF act G :=
+| tr_end : traceF act G
+| tr_next : act -> G -> traceF act G.
+(* begin hide *)
+Arguments tr_next & {act G}.
+Arguments tr_end & {act G}.
+(* end hide *)
+
+CoInductive trace act := roll { unroll : traceF act (trace act) }.
+
+Definition ty_trace := trace event.
+
+(* begin details:  *)
+
+Definition trace_mapF {A B : Type} (f : A -> B) X Y G (trc : traceF A X)
+  : traceF B Y :=
+  match trc with
+  | tr_end => tr_end
+  | tr_next a trc => tr_next (f a) (G trc)
+  end.
+CoFixpoint trace_map {A B : Type} (f : A -> B) (trc : trace A) : trace B :=
+  roll (trace_mapF f (trace_map f) (unroll trc)).
+(* end details *)
+
+Fixpoint find_k n (k : seq (nat * LocalType)) : LocalType :=
+  match k with
+  | [::] => b_bot
+  | h :: t => if h.1 == n then h.2 else find_k n t
+  end.
+
+Inductive lty_step p : LocalType -> event -> LocalType -> Prop :=
+| lt_send a kL (T : AltT) (x : T) :
+    lact a == a_send ->
+    lty_step p (b_act T a kL) (mk_ev a_send p (lsubj a) T) (find_k (sumT_alt T x) kL)
+. 
+| lt_recv q T x kL :
+    lty_step p (l_recv q T kL) (mk_ev a_recv q p T) (kL x)
+.
+Derive Inversion lty_step_inv with
+    (forall p L0 Ev L1, @lty_step p L0 Ev L1) Sort Prop.
+
+Inductive lty_lts_ (p : participant) (G : ty_trace -> lty -> Prop)
+    : ty_trace -> lty -> Prop :=
+  | ty_end TRC L :
+      run_lty L = l_end ->
+      unroll TRC = tr_end -> @lty_lts_ p G TRC L
+  | ty_next E TRC0 TRC1 L0 L1 :
+      unroll TRC0 = tr_next E TRC1 ->
+      @lty_step p (run_lty L0) E L1 -> G TRC1 L1 -> @lty_lts_ p G TRC0 L0
+  .
+  Derive Inversion lty_lts_inv with
+      (forall p G TRC L, @lty_lts_ p G TRC L) Sort Prop.
+  Definition lty_accepts p := paco2 (lty_lts_ p) bot2.
+
+  Lemma lty_lts_monotone p : monotone2 (lty_lts_ p).
+  Proof.
+    move=>TRC L r r' H0 H1;  case: H0.
+    - by move=> TRC0 U0; constructor.
+    - by move=> E0 TRC0 TRC1 L0 L1 U0 ST /H1; apply (ty_next _ _ _ U0).
+  Qed.
+

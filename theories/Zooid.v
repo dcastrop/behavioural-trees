@@ -238,22 +238,6 @@ Inductive rt_event :=
 Definition mk_obs a p q T x := Obs (mk_ev a p q T) x.
 
 
-(* begin hide *)
-Definition eq_action a1 a2 :=
-  match a1, a2 with
-  | a_send, a_send => true
-  | a_recv, a_recv => true
-  | _, _ => false
-  end.
-
-Lemma action_eqP : Equality.axiom eq_action.
-Proof. by rewrite /Equality.axiom => [[] []/=]; constructor. Qed.
-
-Definition action_eqMixin := EqMixin action_eqP.
-Canonical action_eqType := Eval hnf in EqType action action_eqMixin.
-(* end hide *)
-
-
 (** *** Traces **)
 (** Traces are (potentially infinite) streams of events. They are parameterised
  by the type of events. **)
@@ -506,3 +490,62 @@ Module ProcExtraction.
   Extract Inlined Constant pSend => "(fun p t k -> let* _ = Proc.send p (Obj.magic t) in (Obj.magic k tt))".
   Extract Inlined Constant pRecv => "(fun p k -> let* x = Proc.recv p in (Obj.magic k))".
 End ProcExtraction.
+
+Section GTYExamples.
+  Context (E : Type -> Type).
+  Notation process G r := (proc E (unravel (project G r))).
+
+  Example ended_proc : process END Alice := stop.
+
+  Open Scope proc_scope.
+
+  Definition proc_rec A E L (f : A -> proc E L) : A -> proc E L := f.
+  Arguments proc_rec & {A E L} f.
+
+  Set Contextual Implicit.
+
+  Example ch_Bob0 : process CH1 Bob :=
+    n : MyChoice ::= <~ Alice;;
+    match n with
+    | Case1 c =>
+      proc_rec
+        (cofix pingpong c :=
+         Alice <~ Nat.even c;;
+         n : MyChoice ::= <~ Alice;;
+         match n with
+         | Case1 c =>
+           pingpong c
+         | Case2 _ => stop
+         end) c
+    | Case2 _ =>
+      stop
+    end.
+  Example ping_Bob : process PP Bob :=
+      _ : nat ::= <~ Alice;;
+    Alice <~ true;;
+    stop.
+  Example ping_Alice n : process PP Alice :=
+    Bob <~ n ;;
+    n : bool ::= <~ Bob ;;
+    stop.
+
+  Example infinite_ping_Alice : nat -> process PPRec Alice :=
+    cofix pingpong x :=
+      Bob <~ x;;
+      _ : bool ::= <~ Bob;;
+      pingpong x.+1.
+
+  Example infinite_ping_Bob : process PPRec Bob :=
+    cofix pingpong :=
+      n : nat ::= <~ Alice;;
+      Alice <~ Nat.even n ;;
+      pingpong.
+
+  Example infinite_ping_Bob0 : process PPRec Bob :=
+    n : nat ::= <~ Alice;;
+    cofix pingpong :=
+      Alice <~ Nat.even n;;
+      n : nat ::= <~ Alice;;
+      pingpong.
+  Close Scope proc_scope.
+End GTYExamples.
