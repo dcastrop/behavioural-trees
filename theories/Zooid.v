@@ -29,21 +29,6 @@ embeddings of binders help mechanising a small process language?
 
 (** This is a small process language *)
 
-(* begin details: participant identifiers are natural numbers *)
-
-Definition participant := Int63.int.
-
-Lemma int_eqP : Equality.axiom Int63.eqb.
-Proof.
-  move=>x y; case: (boolP (x =? y)%int63).
-  - by move=>/eqb_correct->; constructor.
-  - by move=>/negP-H; constructor=>/eqb_complete/H.
-Qed.
-
-Definition int_eqMixin := EqMixin int_eqP.
-Canonical int_eqType := Eval hnf in EqType participant int_eqMixin.
-
-(* end details *)
 
 (** We introduce a typing discipline for [proc], to constraint the kinds of
  traces that are allowed by the process. This typing discipline uses *local
@@ -240,7 +225,6 @@ necessary information about who performed the action, the other party, and the
 payload type. **)
 
 
-Inductive action := a_send | a_recv.
 Record event :=
   mk_ev { action_type : action;
           from : participant;
