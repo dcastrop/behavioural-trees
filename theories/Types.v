@@ -449,9 +449,15 @@ Inductive lty_step p : LocalType -> event -> LocalType -> Prop :=
 | lt_send a kL (T : AltT) (x : T) :
     lact a == a_send ->
     lty_step p (b_act T a kL) (mk_ev a_send p (lsubj a) T) (find_k (sumT_alt T x) kL)
+<<<<<<< HEAD
 | lt_recv a kL (T : AltT) (x : T) :
     lact a == a_recv ->
     lty_step p (b_act T a kL) (mk_ev a_recv (lsubj a) p T) (find_k (sumT_alt T x) kL)
+=======
+.
+| lt_recv q T x kL :
+    lty_step p (l_recv q T kL) (mk_ev a_recv q p T) (kL x)
+>>>>>>> prova
 .
 
 Derive Inversion lty_step_inv with
@@ -471,9 +477,13 @@ Derive Inversion lty_lts_inv with
     (forall p G TRC L, @lty_lts_ p G TRC L) Sort Prop.
 Definition lty_accepts p := paco2 (lty_lts_ p) bot2.
 
+<<<<<<< HEAD
 Lemma lty_lts_monotone p : monotone2 (lty_lts_ p).
 Proof.
   move=>TRC L r r' H0 H1;  case: H0.
   - by move=> TRC0 U0; constructor.
   - by move=> E0 TRC0 TRC1 L0 L1 U0 ST /H1; apply (ty_next _ _ _ U0).
 Qed.
+=======
+(*LG: comment to try out git.*)
+>>>>>>> prova
