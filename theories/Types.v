@@ -470,6 +470,7 @@ Inductive lty_lts_ (p : participant) (G : ty_trace -> LocalType -> Prop)
       unroll TRC = tr_end -> @lty_lts_ p G TRC L
   | ty_next E TRC0 TRC1 L0 L1 :
       unroll TRC0 = tr_next E TRC1 ->
+<<<<<<< HEAD
       @lty_step p (b_unroll L0) E L1 -> G TRC1 L1 -> @lty_lts_ p G TRC0 L0
 .
 
@@ -487,3 +488,17 @@ Qed.
 =======
 (*LG: comment to try out git.*)
 >>>>>>> prova
+=======
+      @lty_step p (run_lty L0) E L1 -> G TRC1 L1 -> @lty_lts_ p G TRC0 L0
+  .
+  Derive Inversion lty_lts_inv with
+      (forall p G TRC L, @lty_lts_ p G TRC L) Sort Prop.
+  Definition lty_accepts p := paco2 (lty_lts_ p) bot2.
+
+  Lemma lty_lts_monotone p : monotone2 (lty_lts_ p).
+  Proof.
+    move=>TRC L r r' H0 H1;  case: H0.
+    - by move=> TRC0 U0; constructor.
+    - by move=> E0 TRC0 TRC1 L0 L1 U0 ST /H1; apply (ty_next _ _ _ U0).
+  Qed.
+>>>>>>> git works
