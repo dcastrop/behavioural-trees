@@ -538,6 +538,7 @@ Derive Inversion lty_lts_inv with
     (forall p G TRC L, @lty_lts_ p G TRC L) Sort Prop.
 Definition lty_accepts p := paco2 (lty_lts_ p) bot2.
 
+(* Proof that LTS_ is monotone *)
 Lemma lty_lts_monotone p : monotone2 (lty_lts_ p).
 Proof.
   move=>TRC L r r' H0 H1;  case: H0.
