@@ -451,6 +451,7 @@ Inductive lty_step p : LocalType -> event -> LocalType -> Prop :=
     lty_step p (b_act T a kL) (mk_ev a_send p (lsubj a) T) (find_k (sumT_alt T x) kL)
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 | lt_recv a kL (T : AltT) (x : T) :
     lact a == a_recv ->
     lty_step p (b_act T a kL) (mk_ev a_recv (lsubj a) p T) (find_k (sumT_alt T x) kL)
@@ -469,6 +470,11 @@ Inductive lty_step p : LocalType -> event -> LocalType -> Prop :=
     lty_step p (b_act T a kL) (mk_ev a_recv (lsubj a) p T) (find_k (sumT_alt T x) kL)
 >>>>>>> Fixes to types/zooid
 >>>>>>> CONFLICT NOT FIXED
+=======
+| lt_recv a kL (T : AltT) (x : T) :
+    lact a == a_recv ->
+    lty_step p (b_act T a kL) (mk_ev a_recv (lsubj a) p T) (find_k (sumT_alt T x) kL)
+>>>>>>> more
 .
 
 Derive Inversion lty_step_inv with
@@ -481,6 +487,7 @@ Inductive lty_lts_ (p : participant) (G : ty_trace -> LocalType -> Prop)
       unroll TRC = tr_end -> @lty_lts_ p G TRC L
   | ty_next E TRC0 TRC1 L0 L1 :
       unroll TRC0 = tr_next E TRC1 ->
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
       @lty_step p (b_unroll L0) E L1 -> G TRC1 L1 -> @lty_lts_ p G TRC0 L0
@@ -519,8 +526,11 @@ Qed.
 >>>>>>> git works
 =======
 =======
+=======
+>>>>>>> more
       @lty_step p (b_unroll L0) E L1 -> G TRC1 L1 -> @lty_lts_ p G TRC0 L0
 .
+
 Derive Inversion lty_lts_inv with
     (forall p G TRC L, @lty_lts_ p G TRC L) Sort Prop.
 Definition lty_accepts p := paco2 (lty_lts_ p) bot2.
@@ -531,5 +541,8 @@ Proof.
   - by move=> TRC0 U0; constructor.
     - by move=> E0 TRC0 TRC1 L0 L1 U0 ST /H1; apply (ty_next _ _ _ U0).
 Qed.
+<<<<<<< HEAD
 >>>>>>> Fixes to types/zooid
 >>>>>>> CONFLICT NOT FIXED
+=======
+>>>>>>> more
