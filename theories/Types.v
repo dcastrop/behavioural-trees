@@ -450,6 +450,7 @@ Inductive lty_step p : LocalType -> event -> LocalType -> Prop :=
     lact a == a_send ->
     lty_step p (b_act T a kL) (mk_ev a_send p (lsubj a) T) (find_k (sumT_alt T x) kL)
 <<<<<<< HEAD
+<<<<<<< HEAD
 | lt_recv a kL (T : AltT) (x : T) :
     lact a == a_recv ->
     lty_step p (b_act T a kL) (mk_ev a_recv (lsubj a) p T) (find_k (sumT_alt T x) kL)
@@ -458,6 +459,16 @@ Inductive lty_step p : LocalType -> event -> LocalType -> Prop :=
 | lt_recv q T x kL :
     lty_step p (l_recv q T kL) (mk_ev a_recv q p T) (kL x)
 >>>>>>> prova
+=======
+.
+| lt_recv q T x kL :
+    lty_step p (l_recv q T kL) (mk_ev a_recv q p T) (kL x)
+=======
+| lt_recv a kL (T : AltT) (x : T) :
+    lact a == a_recv ->
+    lty_step p (b_act T a kL) (mk_ev a_recv (lsubj a) p T) (find_k (sumT_alt T x) kL)
+>>>>>>> Fixes to types/zooid
+>>>>>>> CONFLICT NOT FIXED
 .
 
 Derive Inversion lty_step_inv with
@@ -470,6 +481,7 @@ Inductive lty_lts_ (p : participant) (G : ty_trace -> LocalType -> Prop)
       unroll TRC = tr_end -> @lty_lts_ p G TRC L
   | ty_next E TRC0 TRC1 L0 L1 :
       unroll TRC0 = tr_next E TRC1 ->
+<<<<<<< HEAD
 <<<<<<< HEAD
       @lty_step p (b_unroll L0) E L1 -> G TRC1 L1 -> @lty_lts_ p G TRC0 L0
 .
@@ -489,6 +501,8 @@ Qed.
 (*LG: comment to try out git.*)
 >>>>>>> prova
 =======
+=======
+>>>>>>> CONFLICT NOT FIXED
       @lty_step p (run_lty L0) E L1 -> G TRC1 L1 -> @lty_lts_ p G TRC0 L0
   .
   Derive Inversion lty_lts_inv with
@@ -501,4 +515,21 @@ Qed.
     - by move=> TRC0 U0; constructor.
     - by move=> E0 TRC0 TRC1 L0 L1 U0 ST /H1; apply (ty_next _ _ _ U0).
   Qed.
+<<<<<<< HEAD
 >>>>>>> git works
+=======
+=======
+      @lty_step p (b_unroll L0) E L1 -> G TRC1 L1 -> @lty_lts_ p G TRC0 L0
+.
+Derive Inversion lty_lts_inv with
+    (forall p G TRC L, @lty_lts_ p G TRC L) Sort Prop.
+Definition lty_accepts p := paco2 (lty_lts_ p) bot2.
+
+Lemma lty_lts_monotone p : monotone2 (lty_lts_ p).
+Proof.
+  move=>TRC L r r' H0 H1;  case: H0.
+  - by move=> TRC0 U0; constructor.
+    - by move=> E0 TRC0 TRC1 L0 L1 U0 ST /H1; apply (ty_next _ _ _ U0).
+Qed.
+>>>>>>> Fixes to types/zooid
+>>>>>>> CONFLICT NOT FIXED
