@@ -477,3 +477,5 @@ Proof.
   - by move=> TRC0 U0; constructor.
   - by move=> E0 TRC0 TRC1 L0 L1 U0 ST /H1; apply (ty_next _ _ _ U0).
 Qed.
+
+(**)
