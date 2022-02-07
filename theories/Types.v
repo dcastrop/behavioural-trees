@@ -530,7 +530,10 @@ Qed.
 >>>>>>> more
       @lty_step p (b_unroll L0) E L1 -> G TRC1 L1 -> @lty_lts_ p G TRC0 L0
 .
+<<<<<<< HEAD
 
+=======
+>>>>>>> Fixes to types/zooid
 Derive Inversion lty_lts_inv with
     (forall p G TRC L, @lty_lts_ p G TRC L) Sort Prop.
 Definition lty_accepts p := paco2 (lty_lts_ p) bot2.
