@@ -8,6 +8,8 @@ Require Import Int63.
 
 
 Require Import Utils.ZooidTac.
+Require Import Zooid2.Types.
+
 
 Set Implicit Arguments.
 Set Primitive Projections.
@@ -39,80 +41,47 @@ embeddings of binders help mechanising a small process language?
 (** The typing system relates [proc] with [lty] so [proc] can only take a
 communication type, if the specification allows it: **)
 
-Section LocalTypes.
-  Inductive ltyF G :=
-  | l_end
-  | l_bot
-  | l_send (p : participant) T (kL : T -> G)
-  | l_recv (p : participant) T (kL : T -> G)
-  .
-
-  CoInductive lty := mk_lty { run_lty : ltyF lty }.
-End LocalTypes.
-
-Arguments l_end {G}.
-Arguments l_bot {G}.
-Arguments l_send {G}.
-Arguments l_recv {G}.
-Declare Scope lty_scope.
-Delimit Scope lty_scope with lty.
-Bind Scope lty_scope with lty.
-Notation END := (mk_lty l_end).
-Notation IMPOSSIBLE := (mk_lty l_bot).
-Notation "X '<-' p '!!' T ';;' k" := (mk_lty (l_send p T (fun X => k)))
-        (at level 60, right associativity) : lty_scope.
-Notation "X '@@' P '<-' p '!!' T ';;' K" :=
-  (mk_lty
-      (l_send p T (fun X =>
-                     match X with
-                     | P => K
-                     | _ => mk_lty l_bot
-                     end)))
-    (at level 60, P pattern, right associativity) : lty_scope.
-Notation "X '<-' p '??' T ';;' K" :=
-  (mk_lty
-     (l_recv p T (fun X => K)))
-    (at level 60, right associativity) : lty_scope.
-
 Section Processes.
   Context (E : Type -> Type).
 
-  Notation CAN_SEND p T kL L := (run_lty L = l_send p T kL).
-  Notation CAN_RECV p T kL L := (run_lty L = l_recv p T kL).
+  Notation CAN_SEND p T kL L := (b_run L = @p_act lprefix (mk_lprefix a_send p) T kL).
+  Notation CAN_RECV p T kL L := (b_run L = @p_act lprefix (mk_lprefix a_recv p) T kL).
 
-  Notation IS_SEND := (@erefl _ (l_send _ _ _)).
-  Notation IS_RECV := (@erefl _ (l_recv _ _ _)).
+  Notation IS_SEND := (@erefl _ (@p_act _ (mk_lprefix a_send _) _ _)).
+  Notation IS_RECV := (@erefl _ (@p_act _ (mk_lprefix a_recv _) _ _)).
 
-  Inductive msg L : forall T, (T -> lty) -> Type :=
-  | Send p T  (x : T) kL (H : CAN_SEND p T kL L) : @msg L unit (fun=>kL x)
-  | Recv p T          kL (H : CAN_RECV p T kL L) : @msg L T    kL
+  Inductive msg L : forall T, (T -> LocalType) -> Type :=
+  | Send p A  (x : A) kL (H : CAN_SEND p A kL L) : @msg L unit (fun=> kL x)
+  | Recv p A          kL (H : CAN_RECV p A kL L) : @msg L A    kL
   (* Silent action *)
   | Eff T (e : E T) : @msg L T (fun=> L)
   .
 
-  Notation CAN_END L := (run_lty L = l_end).
-  Notation IS_END := (@erefl _ l_end).
+  Notation CAN_END L := (b_run L = p_end _).
+  Notation IS_END := (@erefl _ (p_end _)).
 
-  Inductive procF (X : lty -> Type) (L : lty) :=
+  Inductive procF (X : LocalType -> Type) (L : LocalType) :=
   | Inact (_ : CAN_END L)
   | Tau (k : X L)
   | Do {T kL} (e : @msg L T kL) (k : forall x, X (kL x))
   .
 End Processes.
 
-Notation CAN_SEND p T kL L := (run_lty L = l_send p T kL).
-Notation CAN_RECV p T kL L := (run_lty L = l_recv p T kL).
-Notation IS_SEND := (@erefl _ (l_send _ _ _)).
-Notation IS_RECV := (@erefl _ (l_recv _ _ _)).
-Notation CAN_END L := (run_lty L = l_end).
-Notation IS_END := (@erefl _ l_end).
+Notation CAN_SEND p T kL L := (b_run L = @p_act lprefix (mk_lprefix a_send p) T kL).
+Notation CAN_RECV p T kL L := (b_run L = @p_act lprefix (mk_lprefix a_recv p) T kL).
+
+Notation IS_SEND := (@erefl _ (@p_act _ (mk_lprefix a_send _) _ _)).
+Notation IS_RECV := (@erefl _ (@p_act _ (mk_lprefix a_recv _) _ _)).
+
+Notation CAN_END L := (b_run L = p_end _).
+Notation IS_END := (@erefl _ (p_end _)).
 
 CoInductive proc E L := mk_proc { observe : @procF E (proc E) L }.
 Definition iproc E L := procF E (proc E) L.
 
 Arguments mk_proc & [E L] observe.
-Arguments Send & {E L} p {T} x {kL} H.
-Arguments Recv & {E L} p {T kL} H.
+Arguments Send & {E L} p {A} x {kL} H.
+Arguments Recv & {E L} p {A kL} H.
 Arguments Eff & {E L T} e.
 Arguments Inact & {E X L}.
 Arguments Tau & {E X L } k.
@@ -151,49 +120,52 @@ Notation "x ':' T '::=' 'lift' e ';;' k" :=
 Section ProcExamples.
   Context (E : Type -> Type).
   Notation process := (proc E).
-  Example ended_proc : process END := stop.
+  Eval compute in b_unroll (b_rec (b_var 1)).
+  Example ended_proc : process (b_rec b_end) := stop.
 
   (* begin hide *)
-  Definition Alice := 0%int63.
-  Definition Bob := 1%int63.
+  (* Definition Alice := 0%int63. *)
+  (* Definition Bob := 1%int63. *)
   (* end hide *)
 
   (* begin details: here we define the specifications that ALICE and BOB
   must satisfy *)
-
-  Open Scope lty_scope.
-  Example NRAlice : lty :=
-    _ <- Bob !! nat ;;
-    _ <- Bob ?? nat ;;
-    END.
-
-  Example NRBob : lty :=
-    _ <- Alice ?? nat ;;
-    _ <- Alice !! nat ;;
-    END.
-
-  Example AliceSpec : lty :=
-    cofix X :=
-      _ <- Bob !! nat ;;
-      _ <- Bob ?? nat ;;
-      X.
-
-  Example BobSpec : lty :=
-    cofix X :=
-      _ <- Alice ?? nat ;;
-      _ <- Alice !! nat ;;
-      X.
-  Close Scope lty_scope.
+  Definition NRAlice := project GTYExamples.PP GTYExamples.Alice.
+  Definition NRBob := project GTYExamples.PP GTYExamples.Bob.
 
   Open Scope proc_scope.
-  Example ping_Alice : process NRAlice :=
-    Bob <~ 0;;
-      _ : nat ::= <~ Bob;;
-    stop.
+  Example ping_Alice : process NRAlice
+    := GTYExamples.Bob <~ 0;;
+       _ : bool ::= <~ GTYExamples.Bob;;
+       stop.
+
   Example ping_Bob : process NRBob :=
-    n : nat ::= <~ Alice ;;
-    Alice <~ n ;;
+    n : nat ::= <~ GTYExamples.Alice ;;
+    GTYExamples.Alice <~ true ;;
     stop.
+
+  (* Example NRAlice : lty := *)
+  (*   _ <- Bob !! nat ;; *)
+  (*   _ <- Bob ?? nat ;; *)
+  (*   END. *)
+
+  (* Example NRBob : lty := *)
+  (*   _ <- Alice ?? nat ;; *)
+  (*   _ <- Alice !! nat ;; *)
+  (*   END. *)
+
+  (* Example AliceSpec : lty := *)
+  (*   cofix X := *)
+  (*     _ <- Bob !! nat ;; *)
+  (*     _ <- Bob ?? nat ;; *)
+  (*     X. *)
+
+  (* Example BobSpec : lty := *)
+  (*   cofix X := *)
+  (*     _ <- Alice ?? nat ;; *)
+  (*     _ <- Alice !! nat ;; *)
+  (*     X. *)
+  (* Close Scope lty_scope. *)
 
   Example infinite_ping_Alice : nat -> process AliceSpec :=
     cofix pingpong x :=

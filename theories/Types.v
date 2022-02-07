@@ -160,7 +160,12 @@ Fixpoint b_subst A v (B' B : Behav A) :=
 
 Definition b_unroll A (B : Behav A) :=
   match B with
-  | b_rec B' => b_subst 0 B B'
+  | b_rec B' =>
+    match b_subst 0 B B' with
+    | b_rec _ => b_end
+    | b_var _ => b_end
+    | B => B
+    end
   | _ => B
   end.
 
@@ -275,8 +280,6 @@ Definition proj_prefix (g : gprefix) r S k : LocalType :=
   | false, true  => @b_act _ S (mk_lprefix a_recv (gfrom g)) k
   | _    , _     => merge_all [seq x.2 | x <- k]
   end.
-
-  (*add if_projects_to_end function for the boolean and comment about the three parts*)
 
 Definition projects_to_end r G1 :=
   (r \notin (g_part G1)) && (behav_closed 0 (b_rec G1)) && (no_bot G1).
@@ -426,40 +429,49 @@ CoFixpoint trace_map {A B : Type} (f : A -> B) (trc : trace A) : trace B :=
   roll (trace_mapF f (trace_map f) (unroll trc)).
 (* end details *)
 
-Fixpoint find_k n (k : seq (nat * LocalType)) : LocalType :=
+Fixpoint find_k A n (k : seq (nat * Behav A)) : Behav A :=
   match k with
   | [::] => b_bot
   | h :: t => if h.1 == n then h.2 else find_k n t
+  end.
+
+Inductive b_prefix A :=
+| p_act (a : A) T (K : T -> Behav A)
+| p_end.
+
+Definition b_run A (b : Behav A) : b_prefix A :=
+  match b_unroll b with
+  | b_act AT a kL => @p_act _ a (sumT AT) (fun x => find_k (sumT_alt AT x) kL)
+  | _ => p_end A
   end.
 
 Inductive lty_step p : LocalType -> event -> LocalType -> Prop :=
 | lt_send a kL (T : AltT) (x : T) :
     lact a == a_send ->
     lty_step p (b_act T a kL) (mk_ev a_send p (lsubj a) T) (find_k (sumT_alt T x) kL)
-. 
-| lt_recv q T x kL :
-    lty_step p (l_recv q T kL) (mk_ev a_recv q p T) (kL x)
+| lt_recv a kL (T : AltT) (x : T) :
+    lact a == a_recv ->
+    lty_step p (b_act T a kL) (mk_ev a_recv (lsubj a) p T) (find_k (sumT_alt T x) kL)
 .
 Derive Inversion lty_step_inv with
     (forall p L0 Ev L1, @lty_step p L0 Ev L1) Sort Prop.
 
-Inductive lty_lts_ (p : participant) (G : ty_trace -> lty -> Prop)
-    : ty_trace -> lty -> Prop :=
+Inductive lty_lts_ (p : participant) (G : ty_trace -> LocalType -> Prop)
+    : ty_trace -> LocalType -> Prop :=
   | ty_end TRC L :
-      run_lty L = l_end ->
+      b_unroll L = b_end ->
       unroll TRC = tr_end -> @lty_lts_ p G TRC L
   | ty_next E TRC0 TRC1 L0 L1 :
       unroll TRC0 = tr_next E TRC1 ->
-      @lty_step p (run_lty L0) E L1 -> G TRC1 L1 -> @lty_lts_ p G TRC0 L0
-  .
-  Derive Inversion lty_lts_inv with
-      (forall p G TRC L, @lty_lts_ p G TRC L) Sort Prop.
-  Definition lty_accepts p := paco2 (lty_lts_ p) bot2.
+      @lty_step p (b_unroll L0) E L1 -> G TRC1 L1 -> @lty_lts_ p G TRC0 L0
+.
+Derive Inversion lty_lts_inv with
+    (forall p G TRC L, @lty_lts_ p G TRC L) Sort Prop.
+Definition lty_accepts p := paco2 (lty_lts_ p) bot2.
 
-  Lemma lty_lts_monotone p : monotone2 (lty_lts_ p).
-  Proof.
-    move=>TRC L r r' H0 H1;  case: H0.
-    - by move=> TRC0 U0; constructor.
+Lemma lty_lts_monotone p : monotone2 (lty_lts_ p).
+Proof.
+  move=>TRC L r r' H0 H1;  case: H0.
+  - by move=> TRC0 U0; constructor.
     - by move=> E0 TRC0 TRC1 L0 L1 U0 ST /H1; apply (ty_next _ _ _ U0).
-  Qed.
-
+Qed.
