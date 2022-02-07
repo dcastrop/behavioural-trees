@@ -453,6 +453,7 @@ Inductive lty_step p : LocalType -> event -> LocalType -> Prop :=
     lact a == a_recv ->
     lty_step p (b_act T a kL) (mk_ev a_recv (lsubj a) p T) (find_k (sumT_alt T x) kL)
 .
+
 Derive Inversion lty_step_inv with
     (forall p L0 Ev L1, @lty_step p L0 Ev L1) Sort Prop.
 
@@ -465,6 +466,7 @@ Inductive lty_lts_ (p : participant) (G : ty_trace -> LocalType -> Prop)
       unroll TRC0 = tr_next E TRC1 ->
       @lty_step p (b_unroll L0) E L1 -> G TRC1 L1 -> @lty_lts_ p G TRC0 L0
 .
+
 Derive Inversion lty_lts_inv with
     (forall p G TRC L, @lty_lts_ p G TRC L) Sort Prop.
 Definition lty_accepts p := paco2 (lty_lts_ p) bot2.
