@@ -476,6 +476,7 @@ Inductive lty_step p : LocalType -> event -> LocalType -> Prop :=
     lty_step p (b_act T a kL) (mk_ev a_recv (lsubj a) p T) (find_k (sumT_alt T x) kL)
 >>>>>>> more
 .
+
 Derive Inversion lty_step_inv with
     (forall p L0 Ev L1, @lty_step p L0 Ev L1) Sort Prop.
 
