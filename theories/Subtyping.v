@@ -8,28 +8,68 @@ Require Import Zooid2.Types.
 Set Implicit Arguments.
 Set Primitive Projections.
 
-Inductive subT : Type -> Type -> Prop :=
+(*Inductive subT : Type -> Type -> Prop :=
 | subT_eq T : subT T T
 | subT_sumL T S1 S2 : subT T S1 -> subT T (S1 + S2)
 | subT_sumR T S1 S2 : subT T S2 -> subT T (S1 + S2)
+| subT_sumLR T1 T2 S1 S2 :
+  subT T1 S1 -> subT T2 S2 -> subT (T1 + T2) (S1 + S2)
+| subT_sumRL T1 T2 S1 S2 :
+  subT T1 S1 -> subT T2 S2 -> subT (T2 + T1) (S1 + S2)
 .
 
-Inductive subTf : forall (T1 T2: Type), ((T1 -> nat) -> (T2 -> nat) -> Prop) :=
-| subTf_eq T f: @subTf T T f f.
+Definition sum_map {A B C : Type} (f1 : A -> C) (f2 : B -> C)
+  : A + B -> C :=
+  fun s =>
+    match s with
+    | inl a => f1 a
+    | inr b => f2 b
+    end.
 
-Inductive subTalt : (T1 -> nat) -> (Type -> nat) -> Prop :=
-| subTalt_eq f : subTalt f f
-| subTalt_sumL f1 f2 T1 T2: subTalt f1 f2
+Inductive subTf : forall (T S: Type), ((T -> nat) -> (S -> nat) -> Prop) :=
+| subTf_eq T f: @subTf T T f f
+| subTf_sumL T S1 S2 f g1 g2:
+  subT T S1 ->
+  @subTf T S1 f g1 ->
+  @subTf T (S1 + S2) f (sum_map g1 g2)
+| subTf_sumR T S1 S2 f g1 g2:
+  subT T S2 ->
+  @subTf T S2 f g2 ->
+  @subTf T (S1 + S2) f (sum_map g1 g2)
+| subTf_sumLR T1 T2 S1 S2 f1 f2 g1 g2:
+  subT T1 S1 -> subT T2 S2 ->
+  @subTf T1 S1 f1 g1 -> @subTf T2 S2 f2 g2 ->
+  @subTf (T1 + T2) (S1 + S2) (sum_map f1 f2) (sum_map g1 g2)
+| subTf_sumRL T1 T2 S1 S2 f1 f2 g1 g2:
+  subT T1 S1 -> subT T2 S2 ->
+  @subTf T1 S1 f1 g1 -> @subTf T2 S2 f2 g2 ->
+  @subTf (T2 + T1) (S1 + S2) (sum_map f2 f1) (sum_map g1 g2)
+.
+
+Definition sub_altT (AT1 AT2 : AltT) :=
+  subT AT1.(sumT) AT2.(sumT) /\ subTf AT1.(sumT_alt) AT2.(sumT_alt).*)
 
 Inductive subtype_ (S : LocalType -> LocalType -> Prop)
   : LocalType -> LocalType -> Prop :=
-| sub_end : @subtype_ S b_end b_end
-| sub_send L1 L2 AT p k1 k2:
-  b_unroll L1 = b_act AT  k1 ->
-  b_unroll L2 = b_act AT l_send k2 ->
-  (forall @subtype_ S Lk1 Lk2) -> @subtype_ S L1 L2
-
-| sub_recv :
+| sub_eq : @subtype_ S b_end b_end
+| sub_send L1 L2 AT a k1 k2:
+  b_unroll L1 = b_act AT a k1 -> (*maybe use the b_run and iff*)
+  b_unroll L2 = b_act AT a k2 ->
+  a.(lact) = a_send ->
+  (forall x1 x2,
+      List.In x1 k1 ->
+      List.In x2 k2 ->
+      x1.1 = x2.1 ->
+      @subtype_ S x1.2 x2.2) -> @subtype_ S L1 L2
+| sub_recv L1 L2 AT a k1 k2:
+  b_unroll L1 = b_act AT a k1 ->
+  b_unroll L2 = b_act AT a k2 ->
+  a.(lact) = a_recv ->
+  (forall x1 x2,
+      List.In x1 k1 ->
+      List.In x2 k2 ->
+      x1.1 = x2.1 ->
+      @subtype_ S x1.2 x2.2) -> @subtype_ S L1 L2
 .
 
 (*
@@ -44,7 +84,7 @@ Inductive lty_lts_ (p : participant) (G : ty_trace -> LocalType -> Prop)
 .
 
 Derive Inversion lty_lts_inv with
-    (forall p G TRC L, @lty_lts_ p G TRC L) Sort Prop.
+ 0   (forall p G TRC L, @lty_lts_ p G TRC L) Sort Prop.
 Definition lty_accepts p := paco2 (lty_lts_ p) bot2.
 
 Lemma lty_lts_monotone p : monotone2 (lty_lts_ p).
