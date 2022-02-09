@@ -49,28 +49,31 @@ Inductive subTf : forall (T S: Type), ((T -> nat) -> (S -> nat) -> Prop) :=
 Definition sub_altT (AT1 AT2 : AltT) :=
   subT AT1.(sumT) AT2.(sumT) /\ subTf AT1.(sumT_alt) AT2.(sumT_alt).*)
 
+Definition find_k_bot {A} n k :=
+  match @find_k A n k with
+  | b_bot => true
+  | _ => false
+  end.
+
 Inductive subtype_ (S : LocalType -> LocalType -> Prop)
   : LocalType -> LocalType -> Prop :=
-| sub_eq : @subtype_ S b_end b_end
+| sub_bot L: @subtype_ S L b_bot
+| sub_end: @subtype_ S b_end b_end
 | sub_send L1 L2 AT a k1 k2:
   b_unroll L1 = b_act AT a k1 -> (*maybe use the b_run and iff*)
   b_unroll L2 = b_act AT a k2 ->
-  a.(lact) = a_send ->
-  (forall x1 x2,
-      List.In x1 k1 ->
-      List.In x2 k2 ->
-      x1.1 = x2.1 ->
-      @subtype_ S x1.2 x2.2) -> @subtype_ S L1 L2
+  lact a = a_send ->
+  (forall n, find_k_bot n k1 == find_k_bot n k2)->
+  (forall n, @subtype_ S (find_k n k1) (find_k n k2)) ->
+  @subtype_ S L1 L2
 | sub_recv L1 L2 AT a k1 k2:
   b_unroll L1 = b_act AT a k1 ->
   b_unroll L2 = b_act AT a k2 ->
-  a.(lact) = a_recv ->
-  (forall x1 x2,
-      List.In x1 k1 ->
-      List.In x2 k2 ->
-      x1.1 = x2.1 ->
-      @subtype_ S x1.2 x2.2) -> @subtype_ S L1 L2
+  lact a = a_recv ->
+  (forall n, @subtype_ S (find_k n k1) (find_k n k2)) ->
+  @subtype_ S L1 L2
 .
+
 
 (*
 Inductive lty_lts_ (p : participant) (G : ty_trace -> LocalType -> Prop)
