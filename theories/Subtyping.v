@@ -57,7 +57,7 @@ Definition find_k_bot {A} n k :=
 
 Inductive subtype_ (S : LocalType -> LocalType -> Prop)
   : LocalType -> LocalType -> Prop :=
-| sub_bot L: @subtype_ S L b_bot
+| sub_bot: @subtype_ S b_bot b_bot
 | sub_end: @subtype_ S b_end b_end
 | sub_send L1 L2 AT a k1 k2:
   b_unroll L1 = b_act AT a k1 -> (*maybe use the b_run and iff*)
@@ -70,6 +70,7 @@ Inductive subtype_ (S : LocalType -> LocalType -> Prop)
   b_unroll L1 = b_act AT a k1 ->
   b_unroll L2 = b_act AT a k2 ->
   lact a = a_recv ->
+  (forall n, find_k_bot n k1 -> find_k_bot n k2)->
   (forall n, S (find_k n k1) (find_k n k2)) ->
   @subtype_ S L1 L2
 .
@@ -79,12 +80,12 @@ Definition subtype := paco2 subtype_ bot2.
 Lemma subtype_monotone: monotone2 (subtype_).
 Proof.
   move=> L1 L2 r r' H0 H1;  case: H0.
-  - by move=> L; constructor.
+  - by constructor.
   - by constructor.
   - move=> {}L1 {}L2 AT a k1 k2 u1 u2 aeq sd hp.
     by apply: (sub_send r' _ _ u1 u2 aeq sd)=>n; apply H1, hp.
-  - move=> {}L1 {}L2 AT a k1 k2 u1 u2 sd hp.
-    by apply: (sub_recv r' _ _ u1 u2 sd)=>n; apply H1, hp.
+  - move=> {}L1 {}L2 AT a k1 k2 u1 u2 aimp sd hp.
+    by apply: (sub_recv r' _ _ u1 u2 aimp sd)=>n; apply H1, hp.
 Qed.
 
 (*
