@@ -75,7 +75,9 @@ Inductive subtype_ (S : LocalType -> LocalType -> Prop)
   @subtype_ S L1 L2
 .
 
-Definition subtype := paco2 subtype_ bot2.
+Derive Inversion subtype_inv with
+    (forall S L1 L2, @subtype_ S L1 L2) Sort Prop.
+Definition subtype := paco2 (subtype_) bot2.
 
 Lemma subtype_monotone: monotone2 (subtype_).
 Proof.
@@ -88,24 +90,9 @@ Proof.
     by apply: (sub_recv r' _ _ u1 u2 aimp sd)=>n; apply H1, hp.
 Qed.
 
-(*
-Inductive lty_lts_ (p : participant) (G : ty_trace -> LocalType -> Prop)
-    : ty_trace -> LocalType -> Prop :=
-  | ty_end TRC L :
-      b_unroll L = b_end ->
-      unroll TRC = tr_end -> @lty_lts_ p G TRC L
-  | ty_next E TRC0 TRC1 L0 L1 :
-      unroll TRC0 = tr_next E TRC1 ->
-      @lty_step p (b_unroll L0) E L1 -> G TRC1 L1 -> @lty_lts_ p G TRC0 L0
-.
+Check subtype.
+Check lty_accepts.
 
-Derive Inversion lty_lts_inv with
- 0   (forall p G TRC L, @lty_lts_ p G TRC L) Sort Prop.
-Definition lty_accepts p := paco2 (lty_lts_ p) bot2.
-
-Lemma lty_lts_monotone p : monotone2 (lty_lts_ p).
-Proof.
-  move=>TRC L r r' H0 H1;  case: H0.
-  - by move=> TRC0 U0; constructor.
-    - by move=> E0 TRC0 TRC1 L0 L1 U0 ST /H1; apply (ty_next _ _ _ U0).
-Qed.*)
+Lemma subtype_trace (L1 L2: LocalType) p TRC:
+  @subtype L1 L2 -> @lty_accepts p TRC L1 -> @lty_accepts p TRC L2.
+  Admitted.
