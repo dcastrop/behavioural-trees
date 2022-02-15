@@ -49,7 +49,7 @@ Inductive subTf : forall (T S: Type), ((T -> nat) -> (S -> nat) -> Prop) :=
 Definition sub_altT (AT1 AT2 : AltT) :=
   subT AT1.(sumT) AT2.(sumT) /\ subTf AT1.(sumT_alt) AT2.(sumT_alt).*)
 
-Definition find_k_bot {A} n k :=
+Definition is_k_def {A} n k :=
   match @find_k A n k with
   | b_bot => true
   | _ => false
@@ -60,18 +60,18 @@ Inductive subtype_ (S : LocalType -> LocalType -> Prop)
 | sub_bot: @subtype_ S b_bot b_bot
 | sub_end: @subtype_ S b_end b_end
 | sub_send L1 L2 AT a k1 k2:
-  b_unroll L1 = b_act AT a k1 -> (*maybe use the b_run and iff*)
+  b_unroll L1 = b_act AT a k1 ->
   b_unroll L2 = b_act AT a k2 ->
   lact a = a_send ->
-  (forall n, find_k_bot n k1 == find_k_bot n k2)->
+  (*(forall n, find_k_bot n k1 == find_k_bot n k2)->*)
   (forall n, S (find_k n k1) (find_k n k2)) ->
   @subtype_ S L1 L2
 | sub_recv L1 L2 AT a k1 k2:
   b_unroll L1 = b_act AT a k1 ->
   b_unroll L2 = b_act AT a k2 ->
   lact a = a_recv ->
-  (forall n, find_k_bot n k1 -> find_k_bot n k2)->
-  (forall n, S (find_k n k1) (find_k n k2)) ->
+  (*(forall n, is_k_def n k2 -> is_k_def n k1) ->*)
+  (forall n, is_k_def n k2 -> S (find_k n k1) (find_k n k2)) ->
   @subtype_ S L1 L2
 .
 
@@ -84,10 +84,10 @@ Proof.
   move=> L1 L2 r r' H0 H1;  case: H0.
   - by constructor.
   - by constructor.
-  - move=> {}L1 {}L2 AT a k1 k2 u1 u2 aeq sd hp.
-    by apply: (sub_send r' _ _ u1 u2 aeq sd)=>n; apply H1, hp.
-  - move=> {}L1 {}L2 AT a k1 k2 u1 u2 aimp sd hp.
-    by apply: (sub_recv r' _ _ u1 u2 aimp sd)=>n; apply H1, hp.
+  - move=> {}L1 {}L2 AT a k1 k2 u1 u2 sd hp.
+    by apply: (sub_send r' _ _ u1 u2 sd)=>n; apply H1, hp.
+  - move=> {}L1 {}L2 AT a k1 k2 u1 u2 sd hp.
+    by apply: (sub_recv r' _ _ u1 u2 sd)=>n hp'; apply H1, hp.
 Qed.
 
 Check subtype.
@@ -95,4 +95,14 @@ Check lty_accepts.
 
 Lemma subtype_trace (L1 L2: LocalType) p TRC:
   @subtype L1 L2 -> @lty_accepts p TRC L1 -> @lty_accepts p TRC L2.
+Proof.
+  move=> sub t1; move: (conj sub t1)=>{sub t1}.
+  move=> /(ex_intro (fun L1=> _) L1) {L1}.
+  move: TRC L2; apply /paco2_acc=> r _ cih.
+  move: cih=>/(_ _ _ (ex_intro _ _ (conj _ _))).
+  move=> cih t L2 [L1 [sub tra1]].
+  case u1: (b_unroll L1).
+  Print b_unroll.
+  Search b_unroll.
+  - move=> _ /(paco2_unfold (@lty_lts_monotone p))=>[].
   Admitted.
